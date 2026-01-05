@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>قارئ PDF مع تعليقات</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: system-ui, sans-serif;
+            display: flex;
+            min-height: 100vh;
+            background-color: #f0f0f0;
+        }
+        .container {
+            display: flex;
+            width: 100%;
+        }
+        .comments-section {
+            flex: 1;
+            padding: 1rem;
+            background-color: #fff;
+            border-left: 1px solid #ccc;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+        .pdf-viewer-section {
+            flex: 3;
+            padding: 1rem;
+            text-align: center;
+            overflow: auto;
+        }
+        #pdf-image {
+            border: 1px solid #ccc;
+            max-width: 100%;
+            height: auto;
+            background-color: white;
+        }
+        .pagination-controls {
+            margin-bottom: 1rem;
+        }
+        #comment-list {
+            list-style-type: none;
+            padding: 0;
+        }
+        #comment-list li {
+            padding: 0.5rem;
+            border-bottom: 1px solid #eee;
+            word-wrap: break-word;
+        }
+        #comment-form textarea, #comment-form input {
+            width: 100%;
+            margin-bottom: 0.5rem;
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="comments-section">
+            <h2>التعليقات</h2>
+            <div id="pdf-selector">
+                <label for="pdf-select">اختر ملف PDF:</label>
+                <select id="pdf-select">
+                    <option value="tlmktq">tlmktq.pdf</option>
+                    <option value="sample">sample.pdf</option>
+                </select>
+            </div>
+            <hr>
+            <h3 id="comments-title">التعليقات للصفحة 1</h3>
+            <ul id="comment-list">
+                <!-- Comments will be loaded here -->
+            </ul>
+            <form id="comment-form">
+                <label for="line-number">رقم السطر:</label>
+                <input type="number" id="line-number" placeholder="ادخل رقم السطر">
+                <label for="comment-text">التعليق:</label>
+                <textarea id="comment-text" placeholder="أضف تعليقك..." rows="4"></textarea>
+                <button type="submit">إضافة تعليق</button>
+            </form>
+        </div>
+        <div class="pdf-viewer-section">
+            <div class="pagination-controls">
+                <button id="prev-page">السابق</button>
+                <span id="page-num"></span> / <span id="page-count"></span>
+                <button id="next-page">التالي</button>
+            </div>
+            <img id="pdf-image" src="" alt="PDF page will be loaded here"/>
+        </div>
+    </div>
+
+    <script>
+        const pdfSelect = document.getElementById('pdf-select');
+        const pdfImage = document.getElementById('pdf-image');
+
+        const pageNumSpan = document.getElementById('page-num');
+        const pageCountSpan = document.getElementById('page-count');
+        const prevPageBtn = document.getElementById('prev-page');
+        const nextPageBtn = document.getElementById('next-page');
+
+        const commentsTitle = document.getElementById('comments-title');
+        const commentList = document.getElementById('comment-list');
+        const commentForm = document.getElementById('comment-form');
+        const commentText = document.getElementById('comment-text');
+        const lineNumber = document.getElementById('line-number');
+
+        let pageNum = 1;
+        let numPages = 0;
+        let currentPdfName = 'tlmktq';
+
+        function renderPage(num) {
+            pdfImage.src = `/pdf-page/${currentPdfName}/${num}`;
+            pageNumSpan.textContent = num;
+            fetchComments(num);
+        }
+
+        async function loadPdf(pdfName) {
+            currentPdfName = pdfName;
+            pageNum = 1;
+            
+            const response = await fetch(`/pdf-info/${pdfName}`);
+            const data = await response.json();
+            numPages = data.num_pages;
+            
+            pageCountSpan.textContent = numPages;
+            renderPage(pageNum);
+        }
+
+        async function fetchComments(page) {
+            commentsTitle.textContent = `التعليقات للصفحة ${page}`;
+            commentList.innerHTML = '<li>تحميل...</li>';
+            try {
+                const response = await fetch(`/comments/${currentPdfName}/${page}`);
+                const comments = await response.json();
+                commentList.innerHTML = '';
+                if (comments.length > 0) {
+                    // Sort comments by line number
+                    comments.sort((a, b) => {
+                        const lineA = parseInt(a.line);
+                        const lineB = parseInt(b.line);
+                        
+                        // Handle non-numeric or empty line numbers by placing them at the end
+                        const valA = isNaN(lineA) ? Infinity : lineA;
+                        const valB = isNaN(lineB) ? Infinity : lineB;
+
+                        return valA - valB;
+                    });
+
+                    comments.forEach((comment, index) => { // Added index to forEach
+                        const li = document.createElement('li');
+                        li.innerHTML = `<strong>رقم السطر: ${comment.line || '-'}</strong><br>${comment.text}`;
+                        
+                        const deleteBtn = document.createElement('button');
+                        deleteBtn.textContent = 'حذف';
+                        deleteBtn.style.marginRight = '10px'; /* Add some spacing */
+                        deleteBtn.style.backgroundColor = '#dc3545'; /* Red color for delete */
+                        deleteBtn.style.color = 'white';
+                        deleteBtn.style.border = 'none';
+                        deleteBtn.style.borderRadius = '5px';
+                        deleteBtn.style.padding = '5px 10px';
+                        deleteBtn.style.cursor = 'pointer';
+                        deleteBtn.addEventListener('click', () => deleteComment(page, index)); // Use addEventListener and pass index
+                        
+                        li.prepend(deleteBtn); // Add button before comment text
+                        commentList.appendChild(li);
+                    });
+                } else {
+                    commentList.innerHTML = '<li>لا توجد تعليقات لهذه الصفحة.</li>';
+                }
+            } catch (error) {
+                console.error('Error fetching comments:', error);
+                commentList.innerHTML = '<li>خطأ في تحميل التعليقات.</li>';
+            }
+        }
+        
+        async function postComment(page, line, comment) {
+            try {
+                await fetch(`/comments/${currentPdfName}/${page}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ comment: comment, line_number: line })
+                });
+                commentText.value = '';
+                lineNumber.value = '';
+                await fetchComments(page);
+            } catch (error) {
+                console.error('Error posting comment:', error);
+                alert('خطأ في إضافة التعليق.');
+            }
+        }
+        
+        async function deleteComment(page, index) {
+            const password = prompt("أدخل كلمة المرور لحذف التعليق:"); // Prompt for password
+            if (password === null) { // User clicked cancel
+                return;
+            }
+
+            try {
+                const response = await fetch(`/comments/${currentPdfName}/${page}/${index}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ password: password })
+                });
+                
+                const result = await response.json();
+                if (response.ok) {
+                    alert(result.message);
+                    await fetchComments(page); // Refresh comments after deletion
+                } else {
+                    alert(`خطأ: ${result.error}`);
+                }
+            } catch (error) {
+                console.error('Error deleting comment:', error);
+                alert('خطأ في حذف التعليق.');
+            }
+        }
+        
+        prevPageBtn.addEventListener('click', () => {
+            if (pageNum <= 1) return;
+            pageNum--;
+            renderPage(pageNum);
+        });
+
+        nextPageBtn.addEventListener('click', () => {
+            if (pageNum >= numPages) return;
+            pageNum++;
+            renderPage(pageNum);
+        });
+
+        commentForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const comment = commentText.value.trim();
+            const line = lineNumber.value;
+            if (comment) {
+                postComment(pageNum, line, comment);
+            }
+        });
+        
+        pdfSelect.addEventListener('change', (e) => {
+            loadPdf(e.target.value);
+        });
+
+        // Initial load
+        loadPdf(currentPdfName);
+    </script>
+</body>
+</html>
