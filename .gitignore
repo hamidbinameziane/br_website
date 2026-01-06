@@ -1,0 +1,9 @@
+# Firebase service account key
+firebase-service-account.json
+
+# Python cache
+__pycache__/
+*.pyc
+
+# SQLite database file (from previous attempts)
+comments.db

@@ -1,87 +1,48 @@
 import os
 import io
-from typing import List, Optional
+import json
+from typing import List
 
-from fastapi import FastAPI, Request, Response, Depends, HTTPException, status
+from fastapi import FastAPI, Request, Response, HTTPException, status
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 import fitz  # PyMuPDF
-
-from sqlalchemy import create_engine, Column, Integer, String
-from sqlalchemy.orm import sessionmaker, declarative_base, Session
+import firebase_admin
+from firebase_admin import credentials, firestore
 
 # --- FastAPI App Setup ---
 app = FastAPI()
 
 # --- Security and Configuration ---
-DELETE_PASSWORD = os.getenv("DELETE_PASSWORD", "1234567890") # Use environment variable for password
+DELETE_PASSWORD = os.getenv("DELETE_PASSWORD", "1234567890")
 
-# Cache for PDF page counts to avoid re-opening files
+# Cache for PDF page counts
 pdf_info_cache = {}
 
-# --- Database Setup (PostgreSQL with SQLAlchemy) ---
-DATABASE_URL = os.getenv("DATABASE_URL") # Read from environment variable
+# --- Firebase Setup ---
+# Check for Render's environment variable first, otherwise use local file.
+SERVICE_ACCOUNT_JSON_STRING = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
 
-# Add connection arguments for robustness in cloud environments
-connect_args = {
-    "connect_timeout": 10, # Give more time for the connection
-    # The following might help in IPv4-only environments like Render
-    "options": "-c host_type=ipv4",
-}
+if SERVICE_ACCOUNT_JSON_STRING:
+    # On Render, use the environment variable
+    service_account_info = json.loads(SERVICE_ACCOUNT_JSON_STRING)
+    cred = credentials.Certificate(service_account_info)
+else:
+    # For local development, use the file
+    cred = credentials.Certificate("firebase-service-account.json")
 
-engine = create_engine(
-    DATABASE_URL,
-    connect_args=connect_args
-)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-Base = declarative_base()
-
-# Comment Model
-class Comment(Base):
-    __tablename__ = "comments"
-
-    id = Column(Integer, primary_key=True, index=True)
-    pdf_name = Column(String, index=True)
-    page_num = Column(Integer, index=True)
-    line_number = Column(String, default="") # Store as string to allow non-numeric input
-    text = Column(String)
-
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "pdf_name": self.pdf_name,
-            "page_num": self.page_num,
-            "line": self.line_number,
-            "text": self.text,
-        }
-
-# Dependency to get a database session
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-# Create database tables on startup
-@app.on_event("startup")
-def on_startup():
-    Base.metadata.create_all(bind=engine)
-
+firebase_admin.initialize_app(cred)
+db = firestore.client()
 
 # --- API Endpoints ---
 
 @app.get("/", response_class=HTMLResponse)
 async def get_index():
-    """Serves the main index.html file."""
     return FileResponse("index.html")
 
 @app.get("/pdf-info/{pdf_name}")
 async def get_pdf_info(pdf_name: str):
-    """Gets the number of pages in a PDF."""
     if pdf_name in pdf_info_cache:
         return JSONResponse(content={"num_pages": pdf_info_cache[pdf_name]})
-    
     try:
         doc = fitz.open(f"{pdf_name}.pdf")
         num_pages = doc.page_count
@@ -91,15 +52,13 @@ async def get_pdf_info(pdf_name: str):
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
-
 @app.get("/pdf-page/{pdf_name}/{page_num}")
 async def get_pdf_page_as_image(pdf_name: str, page_num: int):
-    """Renders a specific PDF page as a PNG image."""
     try:
         doc = fitz.open(f"{pdf_name}.pdf")
         if 0 < page_num <= doc.page_count:
-            page = doc.load_page(page_num - 1)  # 0-indexed
-            pix = page.get_pixmap(dpi=150)  # Increase DPI for better quality
+            page = doc.load_page(page_num - 1)
+            pix = page.get_pixmap(dpi=150)
             img_bytes = pix.tobytes("png")
             doc.close()
             return Response(content=img_bytes, media_type="image/png")
@@ -110,17 +69,20 @@ async def get_pdf_page_as_image(pdf_name: str, page_num: int):
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 @app.get("/comments/{pdf_name}/{page_num}", response_model=List[dict])
-async def get_comments(pdf_name: str, page_num: int, db: Session = Depends(get_db)):
-    """Gets comments for a specific page of a specific PDF."""
-    comments = db.query(Comment).filter(
-        Comment.pdf_name == pdf_name,
-        Comment.page_num == page_num
-    ).order_by(Comment.line_number.asc()).all()
-    return [comment.to_dict() for comment in comments]
+async def get_comments(pdf_name: str, page_num: int):
+    """Gets comments from Firestore."""
+    collection_path = f"{pdf_name}_{page_num}"
+    docs = db.collection(collection_path).order_by("line_number_int").get()
+    comments = []
+    for doc in docs:
+        comment_data = doc.to_dict()
+        comment_data["id"] = doc.id # Add the document ID
+        comments.append(comment_data)
+    return comments
 
 @app.post("/comments/{pdf_name}/{page_num}", status_code=status.HTTP_201_CREATED)
-async def post_comment(pdf_name: str, page_num: int, request: Request, db: Session = Depends(get_db)):
-    """Posts a new comment with a line number for a specific page."""
+async def post_comment(pdf_name: str, page_num: int, request: Request):
+    """Posts a new comment to Firestore."""
     data = await request.json()
     comment_text = data.get("comment")
     line_number = data.get("line_number", "")
@@ -128,43 +90,43 @@ async def post_comment(pdf_name: str, page_num: int, request: Request, db: Sessi
     if not comment_text:
         raise HTTPException(status_code=400, detail="Comment text is required")
 
-    new_comment = Comment(
-        pdf_name=pdf_name,
-        page_num=page_num,
-        line_number=line_number,
-        text=comment_text
-    )
-    db.add(new_comment)
-    db.commit()
-    db.refresh(new_comment) # Get the ID back
+    # Store a numeric version for sorting, but keep original for display
+    line_number_int = -1
+    try:
+        line_number_int = int(line_number)
+    except (ValueError, TypeError):
+        pass
+
+    collection_path = f"{pdf_name}_{page_num}"
+    doc_ref = db.collection(collection_path).document()
+    doc_ref.set({
+        "line": line_number,
+        "text": comment_text,
+        "line_number_int": line_number_int # For sorting
+    })
     
-    return JSONResponse(content={"message": "Comment added successfully", "comment_id": new_comment.id})
+    return JSONResponse(content={"message": "Comment added successfully", "comment_id": doc_ref.id})
 
 @app.delete("/comments/{pdf_name}/{page_num}/{comment_id}")
 async def delete_comment(
     pdf_name: str,
     page_num: int,
-    comment_id: int,
+    comment_id: str, # Firestore IDs are strings
     request: Request,
-    db: Session = Depends(get_db)
 ):
-    """Deletes a specific comment from a page, protected by a password."""
+    """Deletes a specific comment from Firestore."""
     password_data = await request.json()
     provided_password = password_data.get("password")
     
     if provided_password != DELETE_PASSWORD:
         raise HTTPException(status_code=403, detail="Incorrect password")
 
-    comment_to_delete = db.query(Comment).filter(
-        Comment.id == comment_id,
-        Comment.pdf_name == pdf_name,
-        Comment.page_num == page_num
-    ).first()
-
-    if not comment_to_delete:
+    collection_path = f"{pdf_name}_{page_num}"
+    doc_ref = db.collection(collection_path).document(comment_id)
+    
+    if not doc_ref.get().exists:
         raise HTTPException(status_code=404, detail="Comment not found")
         
-    db.delete(comment_to_delete)
-    db.commit()
+    doc_ref.delete()
     
     return JSONResponse(content={"message": "Comment deleted successfully"})

@@ -1,5 +1,4 @@
 fastapi==0.110.0
 uvicorn==0.28.0
-SQLAlchemy==2.0.28
-psycopg2-binary==2.9.9
+firebase-admin==6.5.0
 PyMuPDF==1.23.26
