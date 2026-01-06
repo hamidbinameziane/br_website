@@ -5,62 +5,155 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>قارئ PDF مع تعليقات</title>
     <style>
+        :root {
+            --bg-color: #1a1a1a;
+            --text-color: #f0f0f0;
+            --panel-bg-color: #242424;
+            --border-color: #444;
+            --input-bg-color: #333;
+            --button-color: #4CAF50;
+        }
         body {
             margin: 0;
             font-family: system-ui, sans-serif;
             display: flex;
             min-height: 100vh;
-            background-color: #f0f0f0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
         }
-        .container {
+        .main-container {
             display: flex;
             width: 100%;
+            height: 100vh;
         }
         .comments-section {
             flex: 1;
             padding: 1rem;
-            background-color: #fff;
-            border-left: 1px solid #ccc;
+            background-color: var(--panel-bg-color);
             display: flex;
             flex-direction: column;
             overflow-y: auto;
         }
-        .pdf-viewer-section {
-            flex: 3;
-            padding: 1rem;
-            text-align: center;
-            overflow: auto;
+        #left-comments { border-left: 1px solid var(--border-color); }
+        #right-comments { border-right: 1px solid var(--border-color); }
+        
+        .pdf-viewer-main {
+            flex: 4;
+            display: flex;
+            flex-direction: column;
+            padding: 0 1rem; 
         }
-        #pdf-image {
-            border: 1px solid #ccc;
+        .pdf-display-area {
+            display: flex;
+            flex: 1;
+            gap: 1rem;
+            overflow: auto;
+            align-items: flex-start;
+        }
+        .pdf-page-container {
+            flex: 1;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        .pdf-page-container img {
+            border: 1px solid var(--border-color);
             max-width: 100%;
-            height: auto;
+            max-height: 100%;
+            object-fit: contain;
             background-color: white;
+            filter: invert(100%);
+        }
+        #pdf-selector-container {
+            margin-bottom: 1rem;
         }
         .pagination-controls {
             margin-bottom: 1rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 0.5rem;
         }
-        #comment-list {
+        .pagination-controls button {
+            padding: 3px 8px; /* Even smaller buttons */
+            font-size: 0.75rem; /* Even smaller font size */
+        }
+        #page-num-display {
+            font-size: 0.8rem; /* Even smaller font size */
+            min-width: 80px; /* Adjust min-width */
+            text-align: center;
+        }
+        .comment-list {
             list-style-type: none;
             padding: 0;
+            flex-grow: 1;
         }
-        #comment-list li {
+        .comment-list li {
             padding: 0.5rem;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid var(--border-color);
             word-wrap: break-word;
+            font-size: 0.9rem;
         }
-        #comment-form textarea, #comment-form input {
+        .comment-form textarea, .comment-form input {
             width: 100%;
             margin-bottom: 0.5rem;
             box-sizing: border-box;
+            background-color: var(--input-bg-color);
+            color: var(--text-color);
+            border: 1px solid #555;
+            font-size: 0.9rem;
+            padding: 5px;
         }
+        button {
+            background-color: var(--button-color);
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            cursor: pointer;
+            border-radius: 5px;
+            font-size: 0.9rem;
+        }
+        button:hover { opacity: 0.8; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="comments-section">
-            <h2>التعليقات</h2>
-            <div id="pdf-selector">
+    <div class="main-container">
+        <!-- Left Comments Section -->
+        <div id="left-comments" class="comments-section">
+            <div class="pagination-controls">
+                <button id="prev-page">‹‹ السابق</button>
+                <span id="page-num-display"></span>
+                <button id="next-page">التالي ››</button>
+            </div>
+            <hr>
+            <h3 id="left-comments-title">تعليقات الصفحة اليسرى</h3>
+            <ul class="comment-list" id="left-comment-list"></ul>
+            <form class="comment-form" id="left-comment-form">
+                <label for="left-line-number">رقم السطر:</label>
+                <input type="number" id="left-line-number" placeholder="ادخل رقم السطر">
+                <label for="left-comment-text">التعليق:</label>
+                <textarea id="left-comment-text" placeholder="أضف تعليقك..." rows="4"></textarea>
+                <button type="submit">إضافة تعليق</button>
+            </form>
+        </div>
+
+        <!-- Center PDF Viewer Section -->
+        <div class="pdf-viewer-main">
+            <div class="pdf-display-area">
+                <div class="pdf-page-container">
+                    <img id="left-pdf-image" alt="PDF page will be loaded here"/>
+                </div>
+                <div class="pdf-page-container">
+                    <img id="right-pdf-image" alt="PDF page will be loaded here"/>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Comments Section -->
+        <div id="right-comments" class="comments-section">
+            <div id="pdf-selector-container">
                 <label for="pdf-select">اختر ملف PDF:</label>
                 <select id="pdf-select">
                     <option value="tlmktq">tlmktq.pdf</option>
@@ -68,224 +161,197 @@
                 </select>
             </div>
             <hr>
-            <h3 id="comments-title">التعليقات للصفحة 1</h3>
-            <ul id="comment-list">
-                <!-- Comments will be loaded here -->
-            </ul>
-            <form id="comment-form">
-                <label for="line-number">رقم السطر:</label>
-                <input type="number" id="line-number" placeholder="ادخل رقم السطر">
-                <label for="comment-text">التعليق:</label>
-                <textarea id="comment-text" placeholder="أضف تعليقك..." rows="4"></textarea>
+            <h3 id="right-comments-title">تعليقات الصفحة اليمنى</h3>
+            <ul class="comment-list" id="right-comment-list"></ul>
+            <form class="comment-form" id="right-comment-form">
+                <label for="right-line-number">رقم السطر:</label>
+                <input type="number" id="right-line-number" placeholder="ادخل رقم السطر">
+                <label for="right-comment-text">التعليق:</label>
+                <textarea id="right-comment-text" placeholder="أضف تعليقك..." rows="4"></textarea>
                 <button type="submit">إضافة تعليق</button>
             </form>
-        </div>
-        <div class="pdf-viewer-section">
-            <div class="pagination-controls">
-                <button id="prev-page">السابق</button>
-                <span id="page-num"></span> / <span id="page-count"></span>
-                <button id="next-page">التالي</button>
-            </div>
-            <img id="pdf-image" src="" alt="PDF page will be loaded here"/>
         </div>
     </div>
 
     <script>
-        console.log("Script start");
-
+        // --- DOM Elements ---
         const pdfSelect = document.getElementById('pdf-select');
-        const pdfImage = document.getElementById('pdf-image');
-
-        const pageNumSpan = document.getElementById('page-num');
-        const pageCountSpan = document.getElementById('page-count');
+        const leftPdfImage = document.getElementById('left-pdf-image');
+        const rightPdfImage = document.getElementById('right-pdf-image');
+        
+        // Unified navigation
         const prevPageBtn = document.getElementById('prev-page');
         const nextPageBtn = document.getElementById('next-page');
+        const pageNumDisplay = document.getElementById('page-num-display');
 
-        const commentsTitle = document.getElementById('comments-title');
-        const commentList = document.getElementById('comment-list');
-        const commentForm = document.getElementById('comment-form');
-        const commentText = document.getElementById('comment-text');
-        const lineNumber = document.getElementById('line-number');
+        // Left side comments
+        const leftCommentsTitle = document.getElementById('left-comments-title');
+        const leftCommentList = document.getElementById('left-comment-list');
+        const leftCommentForm = document.getElementById('left-comment-form');
 
-        let pageNum = 1;
-        let numPages = 0;
-        let currentPdfName = 'tlmktq'; // Default PDF name
+        // Right side comments
+        const rightCommentsTitle = document.getElementById('right-comments-title');
+        const rightCommentList = document.getElementById('right-comment-list');
+        const rightCommentForm = document.getElementById('right-comment-form');
 
-        // Keys for localStorage
-        const LAST_PDF_KEY = 'lastPdfName';
-        const LAST_PAGE_KEY = 'lastPageNum';
+        // --- State ---
+        let state = {
+            pdfName: 'tlmktq',
+            totalNumPages: 0,
+            leftPageNum: 1,
+        };
 
-        // Function to save state to localStorage
+        // --- Keys for localStorage ---
+        const LAST_PDF_KEY = 'unified_lastPdfName';
+        const LAST_LEFT_PAGE_KEY = 'unified_lastLeftPageNum';
+
+        // --- Functions ---
         function saveState() {
-            localStorage.setItem(LAST_PDF_KEY, currentPdfName);
-            localStorage.setItem(LAST_PAGE_KEY, pageNum);
-            console.log("State saved:", { currentPdfName, pageNum });
+            localStorage.setItem(LAST_PDF_KEY, state.pdfName);
+            localStorage.setItem(LAST_LEFT_PAGE_KEY, state.leftPageNum);
         }
 
-        function renderPage(num) {
-            console.log("renderPage called with:", num);
-            pdfImage.src = `/pdf-page/${currentPdfName}/${num}`;
-            pageNumSpan.textContent = num;
-            // pageNum = num; // This is already handled in loadPdf or direct clicks
-            saveState(); // Save state after rendering
-            fetchComments(num);
-        }
+        function renderPages() {
+            const leftNum = state.leftPageNum;
+            const rightNum = leftNum + 1;
 
-        async function loadPdf(pdfName, initialPage = 1) {
-            console.log("loadPdf called with:", pdfName, initialPage);
-            currentPdfName = pdfName;
-            if (pdfSelect) { // Check if pdfSelect exists before setting value
-                pdfSelect.value = pdfName; // Update dropdown to reflect loaded PDF
+            // Render Left Page
+            if (leftNum > 0 && leftNum <= state.totalNumPages) {
+                leftPdfImage.src = `/pdf-page/${state.pdfName}/${leftNum}`;
+                fetchComments('left', leftNum);
             } else {
-                console.error("pdfSelect element not found!");
+                leftPdfImage.src = '';
+                leftCommentList.innerHTML = '';
+                leftCommentsTitle.textContent = '';
             }
-            pageNum = initialPage;
+
+            // Render Right Page
+            if (rightNum > 0 && rightNum <= state.totalNumPages) {
+                rightPdfImage.src = `/pdf-page/${state.pdfName}/${rightNum}`;
+                fetchComments('right', rightNum);
+            } else {
+                rightPdfImage.src = '';
+                rightCommentList.innerHTML = '';
+                rightCommentsTitle.textContent = '';
+            }
             
+            // Update unified display
+            pageNumDisplay.textContent = `صفحة ${leftNum} - ${rightNum} / ${state.totalNumPages}`;
+            saveState();
+        }
+
+        async function loadPdf(pdfName, initialLeft = 1) {
+            state.pdfName = pdfName;
+            pdfSelect.value = pdfName;
+
             try {
                 const response = await fetch(`/pdf-info/${pdfName}`);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
                 const data = await response.json();
-                numPages = data.num_pages;
+                state.totalNumPages = data.num_pages;
                 
-                pageCountSpan.textContent = numPages;
-                renderPage(pageNum);
-                saveState(); // Save state after loading new PDF
+                state.leftPageNum = Math.max(1, Math.min(initialLeft, state.totalNumPages));
+
+                renderPages();
             } catch (error) {
                 console.error("Error loading PDF info:", error);
-                pdfImage.alt = `Error loading PDF: ${error.message}`;
             }
         }
 
-        async function fetchComments(page) {
-            commentsTitle.textContent = `التعليقات للصفحة ${page}`;
+        async function fetchComments(side, pageNum) {
+            const commentList = side === 'left' ? leftCommentList : rightCommentList;
+            const commentsTitle = side === 'left' ? leftCommentsTitle : rightCommentsTitle;
+            
+            commentsTitle.textContent = `تعليقات صفحة ${pageNum}`;
             commentList.innerHTML = '<li>تحميل...</li>';
             try {
-                const response = await fetch(`/comments/${currentPdfName}/${page}`);
+                const response = await fetch(`/comments/${state.pdfName}/${pageNum}`);
                 const comments = await response.json();
                 commentList.innerHTML = '';
                 if (comments.length > 0) {
-                    // Sort comments by line number
-                    comments.sort((a, b) => {
-                        const lineA = parseInt(a.line);
-                        const lineB = parseInt(b.line);
-                        
-                        // Handle non-numeric or empty line numbers by placing them at the end
-                        const valA = isNaN(lineA) ? Infinity : lineA;
-                        const valB = isNaN(lineB) ? Infinity : lineB;
-
-                        return valA - valB;
-                    });
-
-                    comments.forEach((comment) => {
+                    comments.forEach(comment => {
                         const li = document.createElement('li');
-                        li.innerHTML = `<strong>رقم السطر: ${comment.line || '-'}</strong><br>${comment.text}`;
-                        
+                        li.innerHTML = `<strong>سطر: ${comment.line || '-'}</strong><br>${comment.text}`;
                         const deleteBtn = document.createElement('button');
                         deleteBtn.textContent = 'حذف';
-                        deleteBtn.style.marginRight = '10px';
-                        deleteBtn.style.backgroundColor = '#dc3545';
-                        deleteBtn.style.color = 'white';
-                        deleteBtn.style.border = 'none';
-                        deleteBtn.style.borderRadius = '5px';
-                        deleteBtn.style.padding = '5px 10px';
-                        deleteBtn.style.cursor = 'pointer';
-                        deleteBtn.addEventListener('click', () => deleteComment(page, comment.id));
-                        
+                        deleteBtn.onclick = () => deleteComment(side, pageNum, comment.id);
                         li.prepend(deleteBtn);
                         commentList.appendChild(li);
                     });
                 } else {
-                    commentList.innerHTML = '<li>لا توجد تعليقات لهذه الصفحة.</li>';
+                    commentList.innerHTML = '<li>لا توجد تعليقات.</li>';
                 }
             } catch (error) {
-                console.error('Error fetching comments:', error);
                 commentList.innerHTML = '<li>خطأ في تحميل التعليقات.</li>';
             }
         }
-        
-        async function postComment(page, line, comment) {
-            try {
-                await fetch(`/comments/${currentPdfName}/${page}`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ comment: comment, line_number: line })
-                });
-                commentText.value = '';
-                lineNumber.value = '';
-                await fetchComments(page);
-            } catch (error) {
-                console.error('Error posting comment:', error);
-                alert('خطأ في إضافة التعليق.');
-            }
-        }
-        
-        async function deleteComment(page, commentId) {
-            const password = prompt("أدخل كلمة المرور لحذف التعليق:");
-            if (password === null) {
-                return;
-            }
 
-            try {
-                const response = await fetch(`/comments/${currentPdfName}/${page}/${commentId}`, {
-                    method: 'DELETE',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ password: password })
-                });
-                
-                const result = await response.json();
-                if (response.ok) {
-                    alert(result.message);
-                    await fetchComments(page);
-                } else {
-                    alert(`خطأ: ${result.detail || result.error}`);
-                }
-            } catch (error) {
-                console.error('Error deleting comment:', error);
-                alert('خطأ في حذف التعليق.');
-            }
-        }
-        
-        prevPageBtn.addEventListener('click', () => {
-            if (pageNum <= 1) return;
-            pageNum--;
-            renderPage(pageNum);
-        });
+        async function postComment(side) {
+            const pageNum = side === 'left' ? state.leftPageNum : state.leftPageNum + 1;
+            const lineEl = side === 'left' ? document.getElementById('left-line-number') : document.getElementById('right-line-number');
+            const textEl = side === 'left' ? document.getElementById('left-comment-text') : document.getElementById('right-comment-text');
+            const line = lineEl.value;
+            const comment = textEl.value.trim();
 
-        nextPageBtn.addEventListener('click', () => {
-            if (pageNum >= numPages) return;
-            pageNum++;
-            renderPage(pageNum);
-        });
-
-        commentForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const comment = commentText.value.trim();
-            const line = lineNumber.value;
             if (comment) {
-                postComment(pageNum, line, comment);
+                try {
+                    await fetch(`/comments/${state.pdfName}/${pageNum}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ comment, line_number: line })
+                    });
+                    lineEl.value = '';
+                    textEl.value = '';
+                    fetchComments(side, pageNum);
+                } catch (error) {
+                    console.error(`Error posting ${side} comment:`, error);
+                }
+            }
+        }
+        
+        async function deleteComment(side, pageNum, commentId) {
+            const password = prompt("أدخل كلمة المرور للحذف:");
+            if (password === null) return;
+
+            try {
+                const response = await fetch(`/comments/${state.pdfName}/${pageNum}/${commentId}`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password })
+                });
+                const result = await response.json();
+                alert(result.message || result.detail);
+                if (response.ok) fetchComments(side, pageNum);
+            } catch (error) {
+                console.error(`Error deleting ${side} comment:`, error);
+            }
+        }
+
+        // --- Event Listeners ---
+        prevPageBtn.addEventListener('click', () => {
+            if (state.leftPageNum > 1) {
+                state.leftPageNum -= 2;
+                renderPages();
             }
         });
-        
-        pdfSelect.addEventListener('change', (e) => {
-            loadPdf(e.target.value);
+        nextPageBtn.addEventListener('click', () => {
+            if (state.leftPageNum + 2 <= state.totalNumPages) {
+                state.leftPageNum += 2;
+                renderPages();
+            }
         });
 
-        // Initial load
-        // Check localStorage for last viewed position
-        const storedPdfName = localStorage.getItem(LAST_PDF_KEY);
-        const storedPageNum = localStorage.getItem(LAST_PAGE_KEY);
+        pdfSelect.addEventListener('change', (e) => loadPdf(e.target.value));
+        leftCommentForm.addEventListener('submit', (e) => { e.preventDefault(); postComment('left'); });
+        rightCommentForm.addEventListener('submit', (e) => { e.preventDefault(); postComment('right'); });
 
-        if (storedPdfName) {
-            loadPdf(storedPdfName, storedPageNum ? parseInt(storedPageNum) : 1);
-        } else {
-            loadPdf(currentPdfName);
+        // --- Initial Load ---
+        function initialize() {
+            const storedPdf = localStorage.getItem(LAST_PDF_KEY) || 'tlmktq';
+            const storedLeftPage = parseInt(localStorage.getItem(LAST_LEFT_PAGE_KEY)) || 1;
+            loadPdf(storedPdf, storedLeftPage);
         }
+
+        initialize();
     </script>
 </body>
 </html>
