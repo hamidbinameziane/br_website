@@ -21,8 +21,16 @@ pdf_info_cache = {}
 # --- Database Setup (PostgreSQL with SQLAlchemy) ---
 DATABASE_URL = os.getenv("DATABASE_URL") # Read from environment variable
 
+# Add connection arguments for robustness in cloud environments
+connect_args = {
+    "connect_timeout": 10, # Give more time for the connection
+    # The following might help in IPv4-only environments like Render
+    "options": "-c host_type=ipv4",
+}
+
 engine = create_engine(
-    DATABASE_URL
+    DATABASE_URL,
+    connect_args=connect_args
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
