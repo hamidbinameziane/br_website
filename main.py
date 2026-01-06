@@ -18,11 +18,11 @@ DELETE_PASSWORD = os.getenv("DELETE_PASSWORD", "1234567890") # Use environment v
 # Cache for PDF page counts to avoid re-opening files
 pdf_info_cache = {}
 
-# --- Database Setup (SQLite with SQLAlchemy) ---
-DATABASE_URL = "sqlite:////var/data/comments.db" # SQLite database file on a persistent disk
+# --- Database Setup (PostgreSQL with SQLAlchemy) ---
+DATABASE_URL = os.getenv("DATABASE_URL") # Read from environment variable
 
 engine = create_engine(
-    DATABASE_URL, connect_args={"check_same_thread": False} # Needed for SQLite with FastAPI
+    DATABASE_URL
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
