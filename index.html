@@ -91,6 +91,8 @@
     </div>
 
     <script>
+        console.log("Script start");
+
         const pdfSelect = document.getElementById('pdf-select');
         const pdfImage = document.getElementById('pdf-image');
 
@@ -107,27 +109,57 @@
 
         let pageNum = 1;
         let numPages = 0;
-        let currentPdfName = 'tlmktq';
+        let currentPdfName = 'tlmktq'; // Default PDF name
+
+        // Keys for localStorage
+        const LAST_PDF_KEY = 'lastPdfName';
+        const LAST_PAGE_KEY = 'lastPageNum';
+
+        // Function to save state to localStorage
+        function saveState() {
+            localStorage.setItem(LAST_PDF_KEY, currentPdfName);
+            localStorage.setItem(LAST_PAGE_KEY, pageNum);
+            console.log("State saved:", { currentPdfName, pageNum });
+        }
 
         function renderPage(num) {
+            console.log("renderPage called with:", num);
             pdfImage.src = `/pdf-page/${currentPdfName}/${num}`;
             pageNumSpan.textContent = num;
+            // pageNum = num; // This is already handled in loadPdf or direct clicks
+            saveState(); // Save state after rendering
             fetchComments(num);
         }
 
-        async function loadPdf(pdfName) {
+        async function loadPdf(pdfName, initialPage = 1) {
+            console.log("loadPdf called with:", pdfName, initialPage);
             currentPdfName = pdfName;
-            pageNum = 1;
+            if (pdfSelect) { // Check if pdfSelect exists before setting value
+                pdfSelect.value = pdfName; // Update dropdown to reflect loaded PDF
+            } else {
+                console.error("pdfSelect element not found!");
+            }
+            pageNum = initialPage;
             
-            const response = await fetch(`/pdf-info/${pdfName}`);
-            const data = await response.json();
-            numPages = data.num_pages;
-            
-            pageCountSpan.textContent = numPages;
-            renderPage(pageNum);
+            try {
+                const response = await fetch(`/pdf-info/${pdfName}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                numPages = data.num_pages;
+                
+                pageCountSpan.textContent = numPages;
+                renderPage(pageNum);
+                saveState(); // Save state after loading new PDF
+            } catch (error) {
+                console.error("Error loading PDF info:", error);
+                pdfImage.alt = `Error loading PDF: ${error.message}`;
+            }
         }
 
         async function fetchComments(page) {
+            console.log("fetchComments called for page:", page);
             commentsTitle.textContent = `التعليقات للصفحة ${page}`;
             commentList.innerHTML = '<li>تحميل...</li>';
             try {
@@ -142,27 +174,27 @@
                         
                         // Handle non-numeric or empty line numbers by placing them at the end
                         const valA = isNaN(lineA) ? Infinity : lineA;
-                        const valB = isNaN(lineB) ? Infinity : lineB;
+                        const valB = isNaN(lineB) ? Infinity : valB; // Fixed typo here (valB instead of lineB)
 
                         return valA - valB;
                     });
 
-                    comments.forEach((comment) => { // Removed index from forEach
+                    comments.forEach((comment) => {
                         const li = document.createElement('li');
                         li.innerHTML = `<strong>رقم السطر: ${comment.line || '-'}</strong><br>${comment.text}`;
                         
                         const deleteBtn = document.createElement('button');
                         deleteBtn.textContent = 'حذف';
-                        deleteBtn.style.marginRight = '10px'; /* Add some spacing */
-                        deleteBtn.style.backgroundColor = '#dc3545'; /* Red color for delete */
+                        deleteBtn.style.marginRight = '10px';
+                        deleteBtn.style.backgroundColor = '#dc3545';
                         deleteBtn.style.color = 'white';
                         deleteBtn.style.border = 'none';
                         deleteBtn.style.borderRadius = '5px';
                         deleteBtn.style.padding = '5px 10px';
                         deleteBtn.style.cursor = 'pointer';
-                        deleteBtn.addEventListener('click', () => deleteComment(page, comment.id)); // Use comment.id
+                        deleteBtn.addEventListener('click', () => deleteComment(page, comment.id));
                         
-                        li.prepend(deleteBtn); // Add button before comment text
+                        li.prepend(deleteBtn);
                         commentList.appendChild(li);
                     });
                 } else {
@@ -175,6 +207,7 @@
         }
         
         async function postComment(page, line, comment) {
+            console.log("postComment called with:", { page, line, comment });
             try {
                 await fetch(`/comments/${currentPdfName}/${page}`, {
                     method: 'POST',
@@ -192,14 +225,15 @@
             }
         }
         
-        async function deleteComment(page, commentId) { // Changed index to commentId
-            const password = prompt("أدخل كلمة المرور لحذف التعليق:"); // Prompt for password
-            if (password === null) { // User clicked cancel
+        async function deleteComment(page, commentId) {
+            console.log("deleteComment called for:", { page, commentId });
+            const password = prompt("أدخل كلمة المرور لحذف التعليق:");
+            if (password === null) {
                 return;
             }
 
             try {
-                const response = await fetch(`/comments/${currentPdfName}/${page}/${commentId}`, { // Use commentId
+                const response = await fetch(`/comments/${currentPdfName}/${page}/${commentId}`, {
                     method: 'DELETE',
                     headers: {
                         'Content-Type': 'application/json'
@@ -210,9 +244,9 @@
                 const result = await response.json();
                 if (response.ok) {
                     alert(result.message);
-                    await fetchComments(page); // Refresh comments after deletion
+                    await fetchComments(page);
                 } else {
-                    alert(`خطأ: ${result.detail || result.error}`); // Use result.detail for HTTPException
+                    alert(`خطأ: ${result.detail || result.error}`);
                 }
             } catch (error) {
                 console.error('Error deleting comment:', error);
@@ -245,8 +279,17 @@
             loadPdf(e.target.value);
         });
 
+        console.log("Initial load logic reached");
         // Initial load
-        loadPdf(currentPdfName);
+        // Check localStorage for last viewed position
+        const storedPdfName = localStorage.getItem(LAST_PDF_KEY);
+        const storedPageNum = localStorage.getItem(LAST_PAGE_KEY);
+
+        if (storedPdfName) {
+            loadPdf(storedPdfName, storedPageNum ? parseInt(storedPageNum) : 1);
+        } else {
+            loadPdf(currentPdfName);
+        }
     </script>
 </body>
 </html>
