@@ -1,31 +1,67 @@
 import os
-import json
 import io
-from fastapi import FastAPI, Request, Response
+from typing import List, Optional
+
+from fastapi import FastAPI, Request, Response, Depends, HTTPException, status
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
-import aiofiles
 import fitz  # PyMuPDF
 
+from sqlalchemy import create_engine, Column, Integer, String
+from sqlalchemy.orm import sessionmaker, declarative_base, Session
+
+# --- FastAPI App Setup ---
 app = FastAPI()
 
-COMMENTS_FILE = "comments.json"
+# --- Security and Configuration ---
 DELETE_PASSWORD = os.getenv("DELETE_PASSWORD", "1234567890") # Use environment variable for password
 
 # Cache for PDF page counts to avoid re-opening files
 pdf_info_cache = {}
 
-async def read_comments():
-    """Reads the comments from the JSON file."""
-    try:
-        async with aiofiles.open(COMMENTS_FILE, mode='r', encoding='utf-8') as f:
-            return json.loads(await f.read())
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+# --- Database Setup (SQLite with SQLAlchemy) ---
+DATABASE_URL = "sqlite:///./comments.db" # SQLite database file
 
-async def write_comments(data: dict):
-    """Writes the comments to the JSON file."""
-    async with aiofiles.open(COMMENTS_FILE, mode='w', encoding='utf-8') as f:
-        await f.write(json.dumps(data, indent=2))
+engine = create_engine(
+    DATABASE_URL, connect_args={"check_same_thread": False} # Needed for SQLite with FastAPI
+)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+Base = declarative_base()
+
+# Comment Model
+class Comment(Base):
+    __tablename__ = "comments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    pdf_name = Column(String, index=True)
+    page_num = Column(Integer, index=True)
+    line_number = Column(String, default="") # Store as string to allow non-numeric input
+    text = Column(String)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "pdf_name": self.pdf_name,
+            "page_num": self.page_num,
+            "line": self.line_number,
+            "text": self.text,
+        }
+
+# Dependency to get a database session
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# Create database tables on startup
+@app.on_event("startup")
+def on_startup():
+    Base.metadata.create_all(bind=engine)
+
+
+# --- API Endpoints ---
 
 @app.get("/", response_class=HTMLResponse)
 async def get_index():
@@ -65,63 +101,62 @@ async def get_pdf_page_as_image(pdf_name: str, page_num: int):
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
-@app.get("/comments/{pdf_name}/{page_num}")
-async def get_comments(pdf_name: str, page_num: int):
+@app.get("/comments/{pdf_name}/{page_num}", response_model=List[dict])
+async def get_comments(pdf_name: str, page_num: int, db: Session = Depends(get_db)):
     """Gets comments for a specific page of a specific PDF."""
-    all_comments = await read_comments()
-    pdf_comments = all_comments.get(pdf_name, {})
-    return JSONResponse(content=pdf_comments.get(str(page_num), []))
+    comments = db.query(Comment).filter(
+        Comment.pdf_name == pdf_name,
+        Comment.page_num == page_num
+    ).order_by(Comment.line_number.asc()).all()
+    return [comment.to_dict() for comment in comments]
 
-@app.post("/comments/{pdf_name}/{page_num}")
-async def post_comment(pdf_name: str, page_num: int, request: Request):
+@app.post("/comments/{pdf_name}/{page_num}", status_code=status.HTTP_201_CREATED)
+async def post_comment(pdf_name: str, page_num: int, request: Request, db: Session = Depends(get_db)):
     """Posts a new comment with a line number for a specific page."""
     data = await request.json()
     comment_text = data.get("comment")
-    line_number = data.get("line_number", "") # default to empty string if not provided
+    line_number = data.get("line_number", "")
 
     if not comment_text:
-        return JSONResponse(content={"error": "Comment text is required"}, status_code=400)
+        raise HTTPException(status_code=400, detail="Comment text is required")
 
-    all_comments = await read_comments()
+    new_comment = Comment(
+        pdf_name=pdf_name,
+        page_num=page_num,
+        line_number=line_number,
+        text=comment_text
+    )
+    db.add(new_comment)
+    db.commit()
+    db.refresh(new_comment) # Get the ID back
+    
+    return JSONResponse(content={"message": "Comment added successfully", "comment_id": new_comment.id})
 
-    if pdf_name not in all_comments:
-        all_comments[pdf_name] = {}
-        
-    page_key = str(page_num)
-    if page_key not in all_comments[pdf_name]:
-        all_comments[pdf_name][page_key] = []
-    
-    # Store comment as an object with text and line number
-    new_comment = {"line": line_number, "text": comment_text}
-    all_comments[pdf_name][page_key].append(new_comment)
-    
-    await write_comments(all_comments)
-    
-    return JSONResponse(content={"message": "Comment added successfully"})
-
-@app.delete("/comments/{pdf_name}/{page_num}/{comment_index}")
-async def delete_comment(pdf_name: str, page_num: int, comment_index: int, request: Request):
+@app.delete("/comments/{pdf_name}/{page_num}/{comment_id}")
+async def delete_comment(
+    pdf_name: str,
+    page_num: int,
+    comment_id: int,
+    request: Request,
+    db: Session = Depends(get_db)
+):
     """Deletes a specific comment from a page, protected by a password."""
     password_data = await request.json()
     provided_password = password_data.get("password")
     
-    if provided_password != DELETE_PASSWORD: # Use environment variable for password
-        return JSONResponse(content={"error": "Incorrect password"}, status_code=403)
+    if provided_password != DELETE_PASSWORD:
+        raise HTTPException(status_code=403, detail="Incorrect password")
 
-    all_comments = await read_comments()
+    comment_to_delete = db.query(Comment).filter(
+        Comment.id == comment_id,
+        Comment.pdf_name == pdf_name,
+        Comment.page_num == page_num
+    ).first()
+
+    if not comment_to_delete:
+        raise HTTPException(status_code=404, detail="Comment not found")
+        
+    db.delete(comment_to_delete)
+    db.commit()
     
-    pdf_comments = all_comments.get(pdf_name)
-    if not pdf_comments:
-        return JSONResponse(content={"error": "PDF not found in comments"}, status_code=404)
-        
-    page_key = str(page_num)
-    page_comments = pdf_comments.get(page_key)
-    if not page_comments:
-        return JSONResponse(content={"error": "Page not found in comments"}, status_code=404)
-        
-    if 0 <= comment_index < len(page_comments):
-        deleted_comment = page_comments.pop(comment_index)
-        await write_comments(all_comments)
-        return JSONResponse(content={"message": "Comment deleted successfully", "deleted_comment": deleted_comment})
-    else:
-        return JSONResponse(content={"error": "Comment index out of range"}, status_code=404)
+    return JSONResponse(content={"message": "Comment deleted successfully"})

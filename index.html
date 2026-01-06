@@ -147,7 +147,7 @@
                         return valA - valB;
                     });
 
-                    comments.forEach((comment, index) => { // Added index to forEach
+                    comments.forEach((comment) => { // Removed index from forEach
                         const li = document.createElement('li');
                         li.innerHTML = `<strong>رقم السطر: ${comment.line || '-'}</strong><br>${comment.text}`;
                         
@@ -160,7 +160,7 @@
                         deleteBtn.style.borderRadius = '5px';
                         deleteBtn.style.padding = '5px 10px';
                         deleteBtn.style.cursor = 'pointer';
-                        deleteBtn.addEventListener('click', () => deleteComment(page, index)); // Use addEventListener and pass index
+                        deleteBtn.addEventListener('click', () => deleteComment(page, comment.id)); // Use comment.id
                         
                         li.prepend(deleteBtn); // Add button before comment text
                         commentList.appendChild(li);
@@ -192,14 +192,14 @@
             }
         }
         
-        async function deleteComment(page, index) {
+        async function deleteComment(page, commentId) { // Changed index to commentId
             const password = prompt("أدخل كلمة المرور لحذف التعليق:"); // Prompt for password
             if (password === null) { // User clicked cancel
                 return;
             }
 
             try {
-                const response = await fetch(`/comments/${currentPdfName}/${page}/${index}`, {
+                const response = await fetch(`/comments/${currentPdfName}/${page}/${commentId}`, { // Use commentId
                     method: 'DELETE',
                     headers: {
                         'Content-Type': 'application/json'
@@ -212,7 +212,7 @@
                     alert(result.message);
                     await fetchComments(page); // Refresh comments after deletion
                 } else {
-                    alert(`خطأ: ${result.error}`);
+                    alert(`خطأ: ${result.detail || result.error}`); // Use result.detail for HTTPException
                 }
             } catch (error) {
                 console.error('Error deleting comment:', error);
