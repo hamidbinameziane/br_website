@@ -159,7 +159,6 @@
         }
 
         async function fetchComments(page) {
-            console.log("fetchComments called for page:", page);
             commentsTitle.textContent = `التعليقات للصفحة ${page}`;
             commentList.innerHTML = '<li>تحميل...</li>';
             try {
@@ -174,7 +173,7 @@
                         
                         // Handle non-numeric or empty line numbers by placing them at the end
                         const valA = isNaN(lineA) ? Infinity : lineA;
-                        const valB = isNaN(lineB) ? Infinity : valB; // Fixed typo here (valB instead of lineB)
+                        const valB = isNaN(lineB) ? Infinity : lineB;
 
                         return valA - valB;
                     });
@@ -207,7 +206,6 @@
         }
         
         async function postComment(page, line, comment) {
-            console.log("postComment called with:", { page, line, comment });
             try {
                 await fetch(`/comments/${currentPdfName}/${page}`, {
                     method: 'POST',
@@ -226,7 +224,6 @@
         }
         
         async function deleteComment(page, commentId) {
-            console.log("deleteComment called for:", { page, commentId });
             const password = prompt("أدخل كلمة المرور لحذف التعليق:");
             if (password === null) {
                 return;
@@ -279,7 +276,6 @@
             loadPdf(e.target.value);
         });
 
-        console.log("Initial load logic reached");
         // Initial load
         // Check localStorage for last viewed position
         const storedPdfName = localStorage.getItem(LAST_PDF_KEY);
