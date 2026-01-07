@@ -85,6 +85,24 @@
             width: 60px; /* Specific width for number input */
             text-align: center;
         }
+        /* Style for the clickable label */
+        #goto-page-label {
+            cursor: pointer;
+            text-decoration: none; /* Remove underline */
+            background-color: var(--button-color);
+            color: white;
+            border: none;
+            padding: 3px 8px; /* Match other buttons */
+            border-radius: 5px;
+            font-size: 0.8rem; /* Match other buttons */
+            line-height: normal; /* Ensure text alignment */
+            display: inline-flex; /* Allow padding and alignment */
+            align-items: center;
+            justify-content: center;
+        }
+        #goto-page-label:hover {
+            opacity: 0.8;
+        }
         .pagination-controls {
             display: flex;
             justify-content: center;
@@ -155,9 +173,8 @@
                     <option value="tlmktq">tlmktq.pdf</option>
                     <option value="sample">sample.pdf</option>
                 </select>
-                <label for="goto-page-input" style="margin-left: 1rem;">اذهب لصفحة:</label>
+                <label id="goto-page-label" for="goto-page-input" style="margin-left: 1rem;">اذهب لصفحة:</label>
                 <input type="number" id="goto-page-input" min="1">
-                <button id="goto-page-btn">اذهب</button>
                 <div class="pagination-controls" style="margin-left: 1rem;">
                     <button id="prev-page">‹‹ السابق</button>
                     <span id="page-num-display"></span>
@@ -192,7 +209,7 @@
         // --- DOM Elements ---
         const pdfSelect = document.getElementById('pdf-select');
         const gotoPageInput = document.getElementById('goto-page-input');
-        const gotoPageBtn = document.getElementById('goto-page-btn');
+        const gotoPageLabel = document.getElementById('goto-page-label'); // New label reference
         const leftPdfImage = document.getElementById('left-pdf-image');
         const rightPdfImage = document.getElementById('right-pdf-image');
         const prevPageBtn = document.getElementById('prev-page');
@@ -294,7 +311,7 @@
             newLeftPageNum = Math.max(1, newLeftPageNum);
 
             state.leftPageNum = newLeftPageNum;
-            state.rightPageNum = newLeftPageNum + 1; // Update rightPageNum for clarity in state
+            // state.rightPageNum = newLeftPageNum + 1; // This is derived in renderPages, not explicitly stored in state
             renderPages();
         }
 
@@ -381,7 +398,8 @@
             }
         });
         
-        gotoPageBtn.addEventListener('click', () => {
+        // Use the label for click event
+        gotoPageLabel.addEventListener('click', () => {
             const targetPage = parseInt(gotoPageInput.value);
             if (!isNaN(targetPage) && targetPage >= 1 && targetPage <= state.totalNumPages) {
                 jumpToPage(targetPage);
@@ -391,6 +409,7 @@
             }
         });
 
+        // Keep keyup for Enter on input
         gotoPageInput.addEventListener('keyup', (e) => {
             if (e.key === 'Enter') {
                 const targetPage = parseInt(gotoPageInput.value);
