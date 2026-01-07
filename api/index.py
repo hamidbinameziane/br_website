@@ -37,16 +37,17 @@ bucket = storage.bucket()
 
 @app.get("/", response_class=HTMLResponse)
 async def get_index():
-    return FileResponse("index.html")
+    # Adjust path to be relative to the root where vercel runs the script
+    return FileResponse("static/index.html")
 
-@app.get("/list-pdfs", response_model=List[str])
+@app.get("/api/list-pdfs", response_model=List[str])
 async def list_pdfs():
     """Lists all .pdf files from Firebase Storage."""
     blobs = bucket.list_blobs()
     pdf_files = [blob.name for blob in blobs if blob.name.lower().endswith('.pdf')]
     return pdf_files
 
-@app.get("/pdf-info/{pdf_name}")
+@app.get("/api/pdf-info/{pdf_name}")
 async def get_pdf_info(pdf_name: str):
     if pdf_name in pdf_info_cache:
         return JSONResponse(content={"num_pages": pdf_info_cache[pdf_name]})
@@ -64,7 +65,7 @@ async def get_pdf_info(pdf_name: str):
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
-@app.get("/pdf-page/{pdf_name}/{page_num}")
+@app.get("/api/pdf-page/{pdf_name}/{page_num}")
 async def get_pdf_page_as_image(pdf_name: str, page_num: int):
     try:
         blob = bucket.blob(pdf_name)
@@ -86,7 +87,7 @@ async def get_pdf_page_as_image(pdf_name: str, page_num: int):
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
-@app.get("/comments/{pdf_name}/{page_num}", response_model=List[dict])
+@app.get("/api/comments/{pdf_name}/{page_num}", response_model=List[dict])
 async def get_comments(pdf_name: str, page_num: int):
     """Gets comments from Firestore."""
     collection_path = f"{pdf_name}_{page_num}"
@@ -98,7 +99,7 @@ async def get_comments(pdf_name: str, page_num: int):
         comments.append(comment_data)
     return comments
 
-@app.post("/comments/{pdf_name}/{page_num}", status_code=status.HTTP_201_CREATED)
+@app.post("/api/comments/{pdf_name}/{page_num}", status_code=status.HTTP_201_CREATED)
 async def post_comment(pdf_name: str, page_num: int, request: Request):
     """Posts a new comment to Firestore."""
     data = await request.json()
@@ -124,7 +125,7 @@ async def post_comment(pdf_name: str, page_num: int, request: Request):
     
     return JSONResponse(content={"message": "Comment added successfully", "comment_id": doc_ref.id})
 
-@app.delete("/comments/{pdf_name}/{page_num}/{comment_id}")
+@app.delete("/api/comments/{pdf_name}/{page_num}/{comment_id}")
 async def delete_comment(
     pdf_name: str,
     page_num: int,

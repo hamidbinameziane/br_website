@@ -245,7 +245,7 @@
 
             // Render Visually Left Page (HTML element leftPdfImage)
             if (leftNum > 0 && leftNum <= state.totalNumPages) {
-                leftPdfImage.src = `/pdf-page/${state.pdfName}/${leftNum}`;
+                leftPdfImage.src = `/api/pdf-page/${state.pdfName}/${leftNum}`;
                 fetchComments('left', leftNum);
             } else {
                 leftPdfImage.src = '';
@@ -258,7 +258,7 @@
 
             // Render Visually Right Page (HTML element rightPdfImage)
             if (rightNum > 0 && rightNum <= state.totalNumPages) {
-                rightPdfImage.src = `/pdf-page/${state.pdfName}/${rightNum}`;
+                rightPdfImage.src = `/api/pdf-page/${state.pdfName}/${rightNum}`;
                 fetchComments('right', rightNum);
             } else {
                 rightPdfImage.src = '';
@@ -283,7 +283,7 @@
             pdfSelect.value = pdfName;
 
             try {
-                const response = await fetch(`/pdf-info/${pdfName}`);
+                const response = await fetch(`/api/pdf-info/${pdfName}`);
                 const data = await response.json();
                 state.totalNumPages = data.num_pages;
                 
@@ -321,7 +321,7 @@
             commentsTitle.textContent = `تعليقات صفحة ${pageNum}`;
             commentList.innerHTML = '<li>تحميل...</li>';
             try {
-                const response = await fetch(`/comments/${state.pdfName}/${pageNum}`);
+                const response = await fetch(`/api/comments/${state.pdfName}/${pageNum}`);
                 const comments = await response.json();
                 commentList.innerHTML = '';
                 if (comments.length > 0) {
@@ -351,7 +351,7 @@
 
             if (comment && pageNum > 0 && pageNum <= state.totalNumPages) {
                 try {
-                    await fetch(`/comments/${state.pdfName}/${pageNum}`, {
+                    await fetch(`/api/comments/${state.pdfName}/${pageNum}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ comment, line_number: line })
@@ -370,7 +370,7 @@
             if (password === null) return;
 
             try {
-                const response = await fetch(`/comments/${state.pdfName}/${pageNum}/${commentId}`, {
+                const response = await fetch(`/api/comments/${state.pdfName}/${pageNum}/${commentId}`, {
                     method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ password })
@@ -429,7 +429,7 @@
         async function initialize() {
             try {
                 // Fetch the list of PDFs from the backend
-                const response = await fetch('/list-pdfs');
+                const response = await fetch('/api/list-pdfs');
                 const pdfFiles = await response.json();
 
                 // Clear any existing options and populate the dropdown
