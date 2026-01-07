@@ -170,8 +170,7 @@
             <div class="top-controls">
                 <label for="pdf-select">اختر ملف PDF:</label>
                 <select id="pdf-select">
-                    <option value="tlmktq">tlmktq.pdf</option>
-                    <option value="sample">sample.pdf</option>
+                    <!-- Options will be populated dynamically by JavaScript -->
                 </select>
                 <label id="goto-page-label" for="goto-page-input" style="margin-left: 1rem;">اذهب لصفحة:</label>
                 <input type="number" id="goto-page-input" min="1">
@@ -427,10 +426,39 @@
         rightCommentForm.addEventListener('submit', (e) => { e.preventDefault(); postComment('right'); });
 
         // --- Initial Load ---
-        function initialize() {
-            const storedPdf = localStorage.getItem(LAST_PDF_KEY) || 'tlmktq';
-            const storedLeftPage = parseInt(localStorage.getItem(LAST_LEFT_PAGE_KEY)) || 1;
-            loadPdf(storedPdf, storedLeftPage);
+        async function initialize() {
+            try {
+                // Fetch the list of PDFs from the backend
+                const response = await fetch('/list-pdfs');
+                const pdfFiles = await response.json();
+
+                // Clear any existing options and populate the dropdown
+                pdfSelect.innerHTML = '';
+                pdfFiles.forEach(pdfName => {
+                    const option = document.createElement('option');
+                    option.value = pdfName;
+                    option.textContent = pdfName;
+                    pdfSelect.appendChild(option);
+                });
+
+                // Now, load the last viewed PDF or the first from the list
+                const storedPdf = localStorage.getItem(LAST_PDF_KEY);
+                const lastPdfExists = storedPdf && pdfFiles.includes(storedPdf);
+
+                const pdfToLoad = lastPdfExists ? storedPdf : (pdfFiles[0] || null);
+                
+                if (pdfToLoad) {
+                    const storedLeftPage = parseInt(localStorage.getItem(LAST_LEFT_PAGE_KEY)) || 1;
+                    loadPdf(pdfToLoad, storedLeftPage);
+                } else {
+                    console.error("No PDFs found in Firebase Storage.");
+                    document.body.innerHTML = "<h1>No PDF files found in storage.</h1>";
+                }
+
+            } catch (error) {
+                console.error("Failed to initialize application:", error);
+                document.body.innerHTML = "<h1>Failed to load PDF list from server.</h1>";
+            }
         }
 
         initialize();

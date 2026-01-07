@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request, Response, HTTPException, status
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 import fitz  # PyMuPDF
 import firebase_admin
-from firebase_admin import credentials, firestore
+from firebase_admin import credentials, firestore, storage
 
 # --- FastAPI App Setup ---
 app = FastAPI()
@@ -19,19 +19,19 @@ DELETE_PASSWORD = os.getenv("DELETE_PASSWORD", "1234567890")
 pdf_info_cache = {}
 
 # --- Firebase Setup ---
-# Check for Render's environment variable first, otherwise use local file.
 SERVICE_ACCOUNT_JSON_STRING = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
+STORAGE_BUCKET = os.getenv("FIREBASE_STORAGE_BUCKET") # e.g., your-project-id.appspot.com
 
 if SERVICE_ACCOUNT_JSON_STRING:
-    # On Render, use the environment variable
     service_account_info = json.loads(SERVICE_ACCOUNT_JSON_STRING)
     cred = credentials.Certificate(service_account_info)
 else:
-    # For local development, use the file
     cred = credentials.Certificate("firebase-service-account.json")
 
-firebase_admin.initialize_app(cred)
+# Initialize Firebase with Storage
+firebase_admin.initialize_app(cred, {'storageBucket': STORAGE_BUCKET})
 db = firestore.client()
+bucket = storage.bucket()
 
 # --- API Endpoints ---
 
@@ -39,12 +39,24 @@ db = firestore.client()
 async def get_index():
     return FileResponse("index.html")
 
+@app.get("/list-pdfs", response_model=List[str])
+async def list_pdfs():
+    """Lists all .pdf files from Firebase Storage."""
+    blobs = bucket.list_blobs()
+    pdf_files = [blob.name for blob in blobs if blob.name.lower().endswith('.pdf')]
+    return pdf_files
+
 @app.get("/pdf-info/{pdf_name}")
 async def get_pdf_info(pdf_name: str):
     if pdf_name in pdf_info_cache:
         return JSONResponse(content={"num_pages": pdf_info_cache[pdf_name]})
     try:
-        doc = fitz.open(f"{pdf_name}.pdf")
+        blob = bucket.blob(pdf_name)
+        if not blob.exists():
+            raise HTTPException(status_code=404, detail="PDF not found in storage")
+        
+        pdf_bytes = blob.download_as_bytes()
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         num_pages = doc.page_count
         doc.close()
         pdf_info_cache[pdf_name] = num_pages
@@ -55,7 +67,13 @@ async def get_pdf_info(pdf_name: str):
 @app.get("/pdf-page/{pdf_name}/{page_num}")
 async def get_pdf_page_as_image(pdf_name: str, page_num: int):
     try:
-        doc = fitz.open(f"{pdf_name}.pdf")
+        blob = bucket.blob(pdf_name)
+        if not blob.exists():
+            raise HTTPException(status_code=404, detail="PDF not found in storage")
+
+        pdf_bytes = blob.download_as_bytes()
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        
         if 0 < page_num <= doc.page_count:
             page = doc.load_page(page_num - 1)
             pix = page.get_pixmap(dpi=150)
@@ -76,7 +94,7 @@ async def get_comments(pdf_name: str, page_num: int):
     comments = []
     for doc in docs:
         comment_data = doc.to_dict()
-        comment_data["id"] = doc.id # Add the document ID
+        comment_data["id"] = doc.id
         comments.append(comment_data)
     return comments
 
@@ -90,7 +108,6 @@ async def post_comment(pdf_name: str, page_num: int, request: Request):
     if not comment_text:
         raise HTTPException(status_code=400, detail="Comment text is required")
 
-    # Store a numeric version for sorting, but keep original for display
     line_number_int = -1
     try:
         line_number_int = int(line_number)
@@ -102,7 +119,7 @@ async def post_comment(pdf_name: str, page_num: int, request: Request):
     doc_ref.set({
         "line": line_number,
         "text": comment_text,
-        "line_number_int": line_number_int # For sorting
+        "line_number_int": line_number_int
     })
     
     return JSONResponse(content={"message": "Comment added successfully", "comment_id": doc_ref.id})
@@ -111,7 +128,7 @@ async def post_comment(pdf_name: str, page_num: int, request: Request):
 async def delete_comment(
     pdf_name: str,
     page_num: int,
-    comment_id: str, # Firestore IDs are strings
+    comment_id: str,
     request: Request,
 ):
     """Deletes a specific comment from Firestore."""
