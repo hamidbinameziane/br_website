@@ -148,3 +148,31 @@ async def delete_comment(
     doc_ref.delete()
     
     return JSONResponse(content={"message": "Comment deleted successfully"})
+
+# --- User Preferences Endpoints ---
+
+@app.get("/api/preferences")
+async def get_preferences():
+    """Retrieves the last saved state from Firestore."""
+    try:
+        doc_ref = db.collection("preferences").document("default-user")
+        doc = doc_ref.get()
+        if doc.exists:
+            return JSONResponse(content=doc.to_dict())
+        else:
+            # Return a default state if no preferences are saved yet
+            return JSONResponse(content={"last_opened_pdf": None, "pdf_positions": {}})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/preferences", status_code=status.HTTP_200_OK)
+async def set_preferences(request: Request):
+    """Saves the current state to Firestore."""
+    try:
+        data = await request.json()
+        doc_ref = db.collection("preferences").document("default-user")
+        # Use set with merge=True to update fields without overwriting the whole document
+        doc_ref.set(data, merge=True)
+        return JSONResponse(content={"message": "Preferences saved successfully"})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
