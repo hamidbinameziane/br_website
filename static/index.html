@@ -227,23 +227,24 @@
             totalNumPages: 0,
             leftPageNum: 1,
         };
-
-        // --- Keys for localStorage ---
-        const LAST_PDF_KEY = 'unified_lastPdfName_v4';
-        const PDF_POSITIONS_KEY = 'unified_pdfPositions_v4'; // New key for per-book positions
+        let pdfPositions = {}; // Object to hold page number for each book, loaded from Firebase
 
         // --- Functions ---
-        function saveState() {
-            // Save the last opened PDF
-            localStorage.setItem(LAST_PDF_KEY, state.pdfName);
-
-            // Save the page number for the current PDF
+        async function saveState() {
+            if (state.pdfName) {
+                pdfPositions[state.pdfName] = state.leftPageNum;
+            }
             try {
-                const positions = JSON.parse(localStorage.getItem(PDF_POSITIONS_KEY)) || {};
-                positions[state.pdfName] = state.leftPageNum;
-                localStorage.setItem(PDF_POSITIONS_KEY, JSON.stringify(positions));
-            } catch (e) {
-                console.error("Could not save positions to localStorage:", e);
+                await fetch('/api/preferences', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        last_opened_pdf: state.pdfName,
+                        pdf_positions: pdfPositions
+                    })
+                });
+            } catch (error) {
+                console.error("Failed to save state:", error);
             }
         }
 
@@ -251,7 +252,6 @@
             const leftNum = state.leftPageNum;
             const rightNum = leftNum + 1;
 
-            // Render Left Page
             if (leftNum > 0 && leftNum <= state.totalNumPages) {
                 leftPdfImage.src = `/api/pdf-page/${state.pdfName}/${leftNum}`;
                 fetchComments('left', leftNum);
@@ -263,7 +263,6 @@
                 leftCommentsTitle.textContent = '';
             }
 
-            // Render Right Page
             if (rightNum > 0 && rightNum <= state.totalNumPages) {
                 rightPdfImage.src = `/api/pdf-page/${state.pdfName}/${rightNum}`;
                 fetchComments('right', rightNum);
@@ -281,7 +280,7 @@
             saveState();
         }
 
-        async function loadPdf(pdfName, initialLeftPage = 1) {
+        async function loadPdf(pdfName) {
             state.pdfName = pdfName;
             pdfSelect.value = pdfName;
 
@@ -290,11 +289,8 @@
                 const data = await response.json();
                 state.totalNumPages = data.num_pages;
                 
-                // Load the last known page for THIS specific PDF
-                const positions = JSON.parse(localStorage.getItem(PDF_POSITIONS_KEY)) || {};
-                const storedPage = positions[pdfName] || initialLeftPage;
-
-                jumpToPage(storedPage);
+                const lastPageForThisPdf = pdfPositions[pdfName] || 1;
+                jumpToPage(lastPageForThisPdf);
 
             } catch (error) {
                 console.error("Error loading PDF info:", error);
@@ -387,7 +383,7 @@
                 jumpToPage(targetPage);
                 gotoPageInput.value = '';
             } else if (!isNaN(targetPage)) {
-                alert(`يرجى إدخال رقم صفحة صالح بين 1 و ${state.totalNumPages}.`);
+                 alert(`يرجى إدخال رقم صفحة صالح بين 1 و ${state.totalNumPages}.`);
             }
         }
         gotoPageLabel.addEventListener('click', handleGoToPage);
@@ -402,8 +398,13 @@
         // --- Initial Load ---
         async function initialize() {
             try {
-                const response = await fetch('/api/list-pdfs');
-                const pdfFiles = await response.json();
+                const prefsResponse = await fetch('/api/preferences');
+                const savedPrefs = await prefsResponse.json();
+                pdfPositions = savedPrefs.pdf_positions || {};
+                
+                const pdfsResponse = await fetch('/api/list-pdfs');
+                const pdfFiles = await pdfsResponse.json();
+
                 pdfSelect.innerHTML = '';
                 pdfFiles.forEach(pdfName => {
                     const option = document.createElement('option');
@@ -411,23 +412,24 @@
                     option.textContent = pdfName;
                     pdfSelect.appendChild(option);
                 });
-
-                const lastOpenedPdf = localStorage.getItem(LAST_PDF_KEY) || (pdfFiles[0] || null);
+                
+                const lastOpenedPdf = savedPrefs.last_opened_pdf || (pdfFiles[0] || null);
                 
                 if (lastOpenedPdf) {
-                    const positions = JSON.parse(localStorage.getItem(PDF_POSITIONS_KEY)) || {};
-                    const lastPageForThisPdf = positions[lastOpenedPdf] || 1;
+                    // Use the per-book position if available, otherwise default to 1
+                    const lastPageForThisPdf = pdfPositions[lastOpenedPdf] || 1;
                     loadPdf(lastOpenedPdf, lastPageForThisPdf);
                 } else {
                     document.body.innerHTML = "<h1>No PDFs found.</h1>";
                 }
+
             } catch (error) {
-                console.error("Failed to initialize:", error);
-                document.body.innerHTML = "<h1>Failed to load PDF list.</h1>";
+                console.error("Failed to initialize application:", error);
+                document.body.innerHTML = "<h1>Failed to initialize application. Check server logs.</h1>";
             }
         }
 
         initialize();
     </script>
 </body>
-</body>
+</html>
