@@ -208,7 +208,7 @@
         // --- DOM Elements ---
         const pdfSelect = document.getElementById('pdf-select');
         const gotoPageInput = document.getElementById('goto-page-input');
-        const gotoPageLabel = document.getElementById('goto-page-label'); // New label reference
+        const gotoPageLabel = document.getElementById('goto-page-label');
         const leftPdfImage = document.getElementById('left-pdf-image');
         const rightPdfImage = document.getElementById('right-pdf-image');
         const prevPageBtn = document.getElementById('prev-page');
@@ -223,57 +223,60 @@
 
         // --- State ---
         let state = {
-            pdfName: 'tlmktq',
+            pdfName: '',
             totalNumPages: 0,
-            leftPageNum: 1, // This will always be an odd page number (1, 3, 5...)
-            rightPageNum: 2, // This will always be an even page number (2, 4, 6...)
+            leftPageNum: 1,
         };
 
         // --- Keys for localStorage ---
-        const LAST_PDF_KEY = 'unified_lastPdfName_v3';
-        const LAST_LEFT_PAGE_KEY = 'unified_lastLeftPageNum_v3';
+        const LAST_PDF_KEY = 'unified_lastPdfName_v4';
+        const PDF_POSITIONS_KEY = 'unified_pdfPositions_v4'; // New key for per-book positions
 
         // --- Functions ---
         function saveState() {
+            // Save the last opened PDF
             localStorage.setItem(LAST_PDF_KEY, state.pdfName);
-            localStorage.setItem(LAST_LEFT_PAGE_KEY, state.leftPageNum);
+
+            // Save the page number for the current PDF
+            try {
+                const positions = JSON.parse(localStorage.getItem(PDF_POSITIONS_KEY)) || {};
+                positions[state.pdfName] = state.leftPageNum;
+                localStorage.setItem(PDF_POSITIONS_KEY, JSON.stringify(positions));
+            } catch (e) {
+                console.error("Could not save positions to localStorage:", e);
+            }
         }
 
         function renderPages() {
             const leftNum = state.leftPageNum;
             const rightNum = leftNum + 1;
 
-            // Render Visually Left Page (HTML element leftPdfImage)
+            // Render Left Page
             if (leftNum > 0 && leftNum <= state.totalNumPages) {
                 leftPdfImage.src = `/api/pdf-page/${state.pdfName}/${leftNum}`;
                 fetchComments('left', leftNum);
             } else {
                 leftPdfImage.src = '';
-                // Clear comments and title if page is out of bounds
                 document.getElementById('left-comment-text').value = '';
                 document.getElementById('left-line-number').value = '';
                 leftCommentList.innerHTML = '';
                 leftCommentsTitle.textContent = '';
             }
 
-            // Render Visually Right Page (HTML element rightPdfImage)
+            // Render Right Page
             if (rightNum > 0 && rightNum <= state.totalNumPages) {
                 rightPdfImage.src = `/api/pdf-page/${state.pdfName}/${rightNum}`;
                 fetchComments('right', rightNum);
             } else {
                 rightPdfImage.src = '';
-                // Clear comments and title if page is out of bounds
                 document.getElementById('right-comment-text').value = '';
                 document.getElementById('right-line-number').value = '';
                 rightCommentList.innerHTML = '';
                 rightCommentsTitle.textContent = '';
             }
             
-            // Update unified display for visual order: Left Page - Right Page
             let displayLeft = leftNum > 0 && leftNum <= state.totalNumPages ? leftNum : '-';
             let displayRight = rightNum > 0 && rightNum <= state.totalNumPages ? rightNum : '-';
-
-            // Display as: Left Page - Right Page
             pageNumDisplay.textContent = `صفحة ${displayLeft} - ${displayRight} / ${state.totalNumPages}`;
             saveState();
         }
@@ -287,8 +290,11 @@
                 const data = await response.json();
                 state.totalNumPages = data.num_pages;
                 
-                // Jump to the initial page based on the new logic
-                jumpToPage(initialLeftPage);
+                // Load the last known page for THIS specific PDF
+                const positions = JSON.parse(localStorage.getItem(PDF_POSITIONS_KEY)) || {};
+                const storedPage = positions[pdfName] || initialLeftPage;
+
+                jumpToPage(storedPage);
 
             } catch (error) {
                 console.error("Error loading PDF info:", error);
@@ -297,20 +303,9 @@
         
         function jumpToPage(targetPage) {
             targetPage = Math.max(1, Math.min(targetPage, state.totalNumPages));
-            
-            let newLeftPageNum;
-
-            if (targetPage % 2 !== 0) { // If target page is odd, it starts the pair on the left
-                newLeftPageNum = targetPage;
-            } else { // If target page is even, its pair starts with the previous odd page
-                newLeftPageNum = targetPage - 1;
-            }
-
-            // Ensure newLeftPageNum is not 0 or negative
+            let newLeftPageNum = (targetPage % 2 !== 0) ? targetPage : targetPage - 1;
             newLeftPageNum = Math.max(1, newLeftPageNum);
-
             state.leftPageNum = newLeftPageNum;
-            // state.rightPageNum = newLeftPageNum + 1; // This is derived in renderPages, not explicitly stored in state
             renderPages();
         }
 
@@ -343,7 +338,7 @@
         }
 
         async function postComment(side) {
-            const pageNum = side === 'left' ? state.leftPageNum : state.leftPageNum + 1; // Post to the correct page
+            const pageNum = side === 'left' ? state.leftPageNum : state.leftPageNum + 1;
             const lineEl = side === 'left' ? document.getElementById('left-line-number') : document.getElementById('right-line-number');
             const textEl = side === 'left' ? document.getElementById('left-comment-text') : document.getElementById('right-comment-text');
             const line = lineEl.value;
@@ -360,15 +355,12 @@
                     textEl.value = '';
                     fetchComments(side, pageNum);
                 } catch (error) { console.error(`Error posting ${side} comment:`, error); }
-            } else if (pageNum > state.totalNumPages) {
-                alert('لا يمكن إضافة تعليق لصفحة غير موجودة.');
             }
         }
         
         async function deleteComment(side, pageNum, commentId) {
             const password = prompt("أدخل كلمة المرور للحذف:");
             if (password === null) return;
-
             try {
                 const response = await fetch(`/api/comments/${state.pdfName}/${pageNum}/${commentId}`, {
                     method: 'DELETE',
@@ -383,56 +375,35 @@
 
         // --- Event Listeners ---
         prevPageBtn.addEventListener('click', () => {
-            if (state.leftPageNum > 1) {
-                jumpToPage(state.leftPageNum - 2);
-            } else {
-                alert('هذه هي الصفحة الأولى');
-            }
+            if (state.leftPageNum > 1) jumpToPage(state.leftPageNum - 2);
         });
         nextPageBtn.addEventListener('click', () => {
-            if (state.leftPageNum + 2 <= state.totalNumPages) {
-                jumpToPage(state.leftPageNum + 2);
-            } else {
-                alert('هذه هي الصفحة الأخيرة');
-            }
+            if (state.leftPageNum + 2 <= state.totalNumPages) jumpToPage(state.leftPageNum + 2);
         });
         
-        // Use the label for click event
-        gotoPageLabel.addEventListener('click', () => {
+        function handleGoToPage() {
             const targetPage = parseInt(gotoPageInput.value);
             if (!isNaN(targetPage) && targetPage >= 1 && targetPage <= state.totalNumPages) {
                 jumpToPage(targetPage);
                 gotoPageInput.value = '';
             } else if (!isNaN(targetPage)) {
-                 alert(`يرجى إدخال رقم صفحة صالح بين 1 و ${state.totalNumPages}.`);
+                alert(`يرجى إدخال رقم صفحة صالح بين 1 و ${state.totalNumPages}.`);
             }
-        });
-
-        // Keep keyup for Enter on input
+        }
+        gotoPageLabel.addEventListener('click', handleGoToPage);
         gotoPageInput.addEventListener('keyup', (e) => {
-            if (e.key === 'Enter') {
-                const targetPage = parseInt(gotoPageInput.value);
-                if (!isNaN(targetPage) && targetPage >= 1 && targetPage <= state.totalNumPages) {
-                    jumpToPage(targetPage);
-                    gotoPageInput.value = '';
-                } else if (!isNaN(targetPage)) {
-                    alert(`يرجى إدخال رقم صفحة صالح بين 1 و ${state.totalNumPages}.`);
-                }
-            }
+            if (e.key === 'Enter') handleGoToPage();
         });
 
-        pdfSelect.addEventListener('change', (e) => loadPdf(e.target.value, 1)); // Load from page 1 by default
+        pdfSelect.addEventListener('change', (e) => loadPdf(e.target.value));
         leftCommentForm.addEventListener('submit', (e) => { e.preventDefault(); postComment('left'); });
         rightCommentForm.addEventListener('submit', (e) => { e.preventDefault(); postComment('right'); });
 
         // --- Initial Load ---
         async function initialize() {
             try {
-                // Fetch the list of PDFs from the backend
                 const response = await fetch('/api/list-pdfs');
                 const pdfFiles = await response.json();
-
-                // Clear any existing options and populate the dropdown
                 pdfSelect.innerHTML = '';
                 pdfFiles.forEach(pdfName => {
                     const option = document.createElement('option');
@@ -441,26 +412,22 @@
                     pdfSelect.appendChild(option);
                 });
 
-                // Now, load the last viewed PDF or the first from the list
-                const storedPdf = localStorage.getItem(LAST_PDF_KEY);
-                const lastPdfExists = storedPdf && pdfFiles.includes(storedPdf);
-
-                const pdfToLoad = lastPdfExists ? storedPdf : (pdfFiles[0] || null);
+                const lastOpenedPdf = localStorage.getItem(LAST_PDF_KEY) || (pdfFiles[0] || null);
                 
-                if (pdfToLoad) {
-                    const storedLeftPage = parseInt(localStorage.getItem(LAST_LEFT_PAGE_KEY)) || 1;
-                    loadPdf(pdfToLoad, storedLeftPage);
+                if (lastOpenedPdf) {
+                    const positions = JSON.parse(localStorage.getItem(PDF_POSITIONS_KEY)) || {};
+                    const lastPageForThisPdf = positions[lastOpenedPdf] || 1;
+                    loadPdf(lastOpenedPdf, lastPageForThisPdf);
                 } else {
-                    console.error("No PDFs found in Firebase Storage.");
-                    document.body.innerHTML = "<h1>No PDF files found in storage.</h1>";
+                    document.body.innerHTML = "<h1>No PDFs found.</h1>";
                 }
-
             } catch (error) {
-                console.error("Failed to initialize application:", error);
-                document.body.innerHTML = "<h1>Failed to load PDF list from server.</h1>";
+                console.error("Failed to initialize:", error);
+                document.body.innerHTML = "<h1>Failed to load PDF list.</h1>";
             }
         }
 
         initialize();
     </script>
+</body>
 </body>
