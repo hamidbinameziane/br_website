@@ -238,6 +238,7 @@
             leftPageNum: 1,
         };
         let pdfPositions = {}; // Object to hold page number for each book, loaded from Firebase
+        let appInitialized = false; // ensure initialize() runs once after auth state resolves
 
         // --- Functions ---
         async function saveState() {
@@ -428,7 +429,13 @@
                 }
 
                 if (typeof firebase !== 'undefined' && firebase.auth) {
-                    firebase.auth().onAuthStateChanged(user => updateUIForUser(user));
+                    firebase.auth().onAuthStateChanged(user => {
+                        updateUIForUser(user);
+                        if (!appInitialized) {
+                            appInitialized = true;
+                            initialize();
+                        }
+                    });
 
                     btnLogin.addEventListener('click', async () => {
                         const email = prompt('البريد الإلكتروني:');
@@ -459,6 +466,10 @@
                     });
                 } else {
                     console.warn('Firebase SDK not loaded; auth buttons will not function.');
+                    if (!appInitialized) {
+                        appInitialized = true;
+                        initialize();
+                    }
                 }
             } catch (err) {
                 console.error('Auth setup error', err);
