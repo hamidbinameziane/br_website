@@ -98,11 +98,13 @@
         #auth-controls input { min-width: 0; max-width: 140px; padding:4px; }
         .pagination-controls { flex: 0 0 auto; }
         #user-status {
+            direction: rtl;
             white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            max-width: 220px;
+            overflow: visible; /* show full status text instead of clipping */
+            text-overflow: clip;
+            max-width: none; /* allow expansion when space is available */
             display: inline-block;
+            min-width: 0;
         }
         /* Style for the clickable label */
         #goto-page-label {
