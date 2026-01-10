@@ -3,11 +3,11 @@ import json
 import logging
 from typing import List, Optional
 
-from fastapi import FastAPI, Request, Response, HTTPException, status
+from fastapi import FastAPI, Request, Response, HTTPException, status, Depends
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 import fitz  # PyMuPDF
 import firebase_admin
-from firebase_admin import credentials, firestore, storage
+from firebase_admin import credentials, firestore, storage, auth as firebase_auth
 from pydantic import BaseModel
 
 # --- FastAPI App Setup ---
@@ -53,6 +53,23 @@ except ValueError:
 
 db = firestore.client()
 bucket = storage.bucket()
+
+
+# --- Auth Helpers ---
+def verify_id_token(request: Request):
+    """FastAPI dependency to verify Firebase ID token from Authorization header.
+
+    Raises HTTPException(401) on missing/invalid token. Returns decoded token on success.
+    """
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    id_token = auth_header.split(" ", 1)[1]
+    try:
+        decoded = firebase_auth.verify_id_token(id_token)
+        return decoded
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
 # --- Request models ---
@@ -133,8 +150,11 @@ async def get_comments(pdf_name: str, page_num: int):
     return comments
 
 @app.post("/api/comments/{pdf_name}/{page_num}", status_code=status.HTTP_201_CREATED)
-async def post_comment(pdf_name: str, page_num: int, comment: CommentCreate):
-    """Posts a new comment to Firestore."""
+async def post_comment(pdf_name: str, page_num: int, comment: CommentCreate, user=Depends(verify_id_token)):
+    """Posts a new comment to Firestore. Requires authenticated user.
+
+    `user` is the decoded Firebase token (contains `uid`, `email`, etc.).
+    """
     comment_text = comment.comment
     line_number = comment.line_number
 
@@ -149,6 +169,8 @@ async def post_comment(pdf_name: str, page_num: int, comment: CommentCreate):
         "line": line_number if line_number is not None else "",
         "text": comment_text,
         "line_number_int": line_number_int,
+        "author_uid": user.get("uid"),
+        "author_email": user.get("email"),
     })
 
     return JSONResponse(content={"message": "Comment added successfully", "comment_id": doc_ref.id})
@@ -159,23 +181,35 @@ async def delete_comment(
     page_num: int,
     comment_id: str,
     request: Request,
+    user=Depends(verify_id_token),
 ):
-    """Deletes a specific comment from Firestore."""
-    password_data = await request.json()
-    provided_password = password_data.get("password")
-    
-    if provided_password != DELETE_PASSWORD:
-        raise HTTPException(status_code=403, detail="Incorrect password")
+    """Deletes a specific comment from Firestore.
+
+    Requires authenticated user. Authorization: allow deletion if user is author or provides DELETE_PASSWORD.
+    """
+    payload = await request.json()
+    provided_password = payload.get("password")
 
     collection_path = f"{pdf_name}_{page_num}"
     doc_ref = db.collection(collection_path).document(comment_id)
-    
-    if not doc_ref.get().exists:
+    doc_snapshot = doc_ref.get()
+    if not doc_snapshot.exists:
         raise HTTPException(status_code=404, detail="Comment not found")
-        
-    doc_ref.delete()
-    
-    return JSONResponse(content={"message": "Comment deleted successfully"})
+
+    comment = doc_snapshot.to_dict()
+    author_uid = comment.get("author_uid")
+
+    # Allow deletion if requester is the author
+    if user.get("uid") == author_uid:
+        doc_ref.delete()
+        return JSONResponse(content={"message": "Comment deleted successfully"})
+
+    # Or allow deletion with the DELETE_PASSWORD
+    if provided_password and provided_password == DELETE_PASSWORD:
+        doc_ref.delete()
+        return JSONResponse(content={"message": "Comment deleted successfully (by admin)"})
+
+    raise HTTPException(status_code=403, detail="Not authorized to delete this comment")
 
 # --- User Preferences Endpoints ---
 

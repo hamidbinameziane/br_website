@@ -149,6 +149,10 @@
         }
         button:hover { opacity: 0.8; }
     </style>
+    <!-- Firebase API key meta (replace with your key or inject at deploy) -->
+    <meta name="firebase-api-key" content="REPLACE_WITH_YOUR_FIREBASE_API_KEY">
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 </head>
 <body>
     <div class="main-container">
@@ -172,12 +176,18 @@
                 <select id="pdf-select">
                     <!-- Options will be populated dynamically by JavaScript -->
                 </select>
-                <label id="goto-page-label" for="goto-page-input" style="margin-left: 1rem;">اذهب لصفحة:</label>
+                <label id="goto-page-label" for="goto-page-input" class="go-to-page-margin">اذهب لصفحة:</label>
                 <input type="number" id="goto-page-input" min="1">
-                <div class="pagination-controls" style="margin-left: 1rem;">
+                <div class="pagination-controls">
                     <button id="prev-page">‹‹ السابق</button>
                     <span id="page-num-display"></span>
                     <button id="next-page">التالي ››</button>
+                </div>
+                <div id="auth-controls" style="display:flex;gap:0.5rem;align-items:center;margin-right:1rem;">
+                    <span id="user-status">غير مسجل</span>
+                    <button id="btn-login">تسجيل دخول</button>
+                    <button id="btn-signup">تسجيل</button>
+                    <button id="btn-logout" style="display:none">تسجيل خروج</button>
                 </div>
             </div>
             <div class="pdf-display-area">
@@ -339,18 +349,27 @@
             const textEl = side === 'left' ? document.getElementById('left-comment-text') : document.getElementById('right-comment-text');
             const line = lineEl.value;
             const comment = textEl.value.trim();
+            const token = localStorage.getItem('idToken');
 
             if (comment && pageNum > 0 && pageNum <= state.totalNumPages) {
                 try {
-                    await fetch(`/api/comments/${state.pdfName}/${pageNum}`, {
+                    const headers = { 'Content-Type': 'application/json' };
+                    if (token) headers['Authorization'] = 'Bearer ' + token;
+                    const res = await fetch(`/api/comments/${state.pdfName}/${pageNum}`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers,
                         body: JSON.stringify({ comment, line_number: line })
                     });
+                    if (!res.ok) {
+                        const err = await res.json().catch(()=>({detail:'Failed'}));
+                        console.error('Post comment failed', err);
+                        alert(err.detail || err.message || 'فشل في إضافة التعليق');
+                        return;
+                    }
                     lineEl.value = '';
                     textEl.value = '';
                     fetchComments(side, pageNum);
-                } catch (error) { console.error(`Error posting ${side} comment:`, error); }
+                } catch (error) { console.error(`Error posting ${side} comment:`, error); alert('خطأ في إضافة التعليق.'); }
             }
         }
         
@@ -358,16 +377,90 @@
             const password = prompt("أدخل كلمة المرور للحذف:");
             if (password === null) return;
             try {
+                const token = localStorage.getItem('idToken');
+                const headers = { 'Content-Type': 'application/json' };
+                if (token) headers['Authorization'] = 'Bearer ' + token;
                 const response = await fetch(`/api/comments/${state.pdfName}/${pageNum}/${commentId}`, {
                     method: 'DELETE',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers,
                     body: JSON.stringify({ password })
                 });
                 const result = await response.json();
                 alert(result.message || result.detail);
                 if (response.ok) fetchComments(side, pageNum);
-            } catch (error) { console.error(`Error deleting ${side} comment:`, error); }
+            } catch (error) { console.error(`Error deleting ${side} comment:`, error); alert('خطأ في حذف التعليق.'); }
         }
+
+        // --- Firebase Auth Setup ---
+        (function setupFirebaseAuth(){
+            try {
+                const apiKey = document.querySelector('meta[name="firebase-api-key"]').content;
+                if (!apiKey || apiKey === 'REPLACE_WITH_YOUR_FIREBASE_API_KEY') {
+                    console.warn('Firebase API key not set in meta tag. Authentication will not work until set.');
+                }
+                const firebaseConfig = { apiKey };
+                if (typeof firebase !== 'undefined' && firebase.apps && !firebase.apps.length) {
+                    firebase.initializeApp(firebaseConfig);
+                }
+
+                const btnLogin = document.getElementById('btn-login');
+                const btnSignup = document.getElementById('btn-signup');
+                const btnLogout = document.getElementById('btn-logout');
+                const userStatus = document.getElementById('user-status');
+
+                function updateUIForUser(user) {
+                    if (user) {
+                        user.getIdToken().then(t => localStorage.setItem('idToken', t));
+                        userStatus.textContent = user.email || user.uid;
+                        btnLogout.style.display = 'inline-block';
+                        btnLogin.style.display = 'none';
+                        btnSignup.style.display = 'none';
+                    } else {
+                        localStorage.removeItem('idToken');
+                        userStatus.textContent = 'غير مسجل';
+                        btnLogout.style.display = 'none';
+                        btnLogin.style.display = 'inline-block';
+                        btnSignup.style.display = 'inline-block';
+                    }
+                }
+
+                if (typeof firebase !== 'undefined' && firebase.auth) {
+                    firebase.auth().onAuthStateChanged(user => updateUIForUser(user));
+
+                    btnLogin.addEventListener('click', async () => {
+                        const email = prompt('البريد الإلكتروني:');
+                        const password = prompt('كلمة المرور:');
+                        if (!email || !password) return;
+                        try {
+                            const cred = await firebase.auth().signInWithEmailAndPassword(email, password);
+                            const token = await cred.user.getIdToken();
+                            localStorage.setItem('idToken', token);
+                            updateUIForUser(cred.user);
+                        } catch (e) { console.error('Login failed', e); alert('فشل في تسجيل الدخول'); }
+                    });
+
+                    btnSignup.addEventListener('click', async () => {
+                        const email = prompt('البريد الإلكتروني للتسجيل:');
+                        const password = prompt('كلمة المرور:');
+                        if (!email || !password) return;
+                        try {
+                            const cred = await firebase.auth().createUserWithEmailAndPassword(email, password);
+                            const token = await cred.user.getIdToken();
+                            localStorage.setItem('idToken', token);
+                            updateUIForUser(cred.user);
+                        } catch (e) { console.error('Signup failed', e); alert('فشل في التسجيل'); }
+                    });
+
+                    btnLogout.addEventListener('click', async () => {
+                        try { await firebase.auth().signOut(); updateUIForUser(null); } catch (e) { console.error(e); }
+                    });
+                } else {
+                    console.warn('Firebase SDK not loaded; auth buttons will not function.');
+                }
+            } catch (err) {
+                console.error('Auth setup error', err);
+            }
+        })();
 
         // --- Event Listeners ---
         prevPageBtn.addEventListener('click', () => {
