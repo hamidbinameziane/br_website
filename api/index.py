@@ -1,37 +1,70 @@
 import os
-import io
 import json
-from typing import List
+import logging
+from typing import List, Optional
 
 from fastapi import FastAPI, Request, Response, HTTPException, status
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 import fitz  # PyMuPDF
 import firebase_admin
 from firebase_admin import credentials, firestore, storage
+from pydantic import BaseModel
 
 # --- FastAPI App Setup ---
 app = FastAPI()
 
 # --- Security and Configuration ---
-DELETE_PASSWORD = os.getenv("DELETE_PASSWORD", "1234567890")
+logging.basicConfig(level=logging.INFO)
+DELETE_PASSWORD = os.getenv("DELETE_PASSWORD")
+if not DELETE_PASSWORD:
+    raise RuntimeError("DELETE_PASSWORD environment variable must be set for security.")
 
 # Cache for PDF page counts
 pdf_info_cache = {}
 
 # --- Firebase Setup ---
 SERVICE_ACCOUNT_JSON_STRING = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
-STORAGE_BUCKET = os.getenv("FIREBASE_STORAGE_BUCKET") # e.g., your-project-id.appspot.com
+STORAGE_BUCKET = os.getenv("FIREBASE_STORAGE_BUCKET")  # e.g., your-project-id.appspot.com
 
-if SERVICE_ACCOUNT_JSON_STRING:
-    service_account_info = json.loads(SERVICE_ACCOUNT_JSON_STRING)
-    cred = credentials.Certificate(service_account_info)
-else:
-    cred = credentials.Certificate("firebase-service-account.json")
+# Initialize Firebase with Storage (safe init, validate envs)
+try:
+    firebase_admin.get_app()
+    logging.info("Firebase already initialized")
+except ValueError:
+    if not STORAGE_BUCKET:
+        raise RuntimeError("FIREBASE_STORAGE_BUCKET environment variable is required.")
+    try:
+        if SERVICE_ACCOUNT_JSON_STRING:
+            try:
+                service_account_info = json.loads(SERVICE_ACCOUNT_JSON_STRING)
+            except json.JSONDecodeError as e:
+                raise RuntimeError("Invalid JSON in FIREBASE_SERVICE_ACCOUNT_JSON") from e
+            cred = credentials.Certificate(service_account_info)
+        else:
+            if not os.path.exists("firebase-service-account.json"):
+                raise RuntimeError(
+                    "Firebase service account not provided via env and firebase-service-account.json not found."
+                )
+            cred = credentials.Certificate("firebase-service-account.json")
 
-# Initialize Firebase with Storage
-firebase_admin.initialize_app(cred, {'storageBucket': STORAGE_BUCKET})
+        firebase_admin.initialize_app(cred, {"storageBucket": STORAGE_BUCKET})
+    except Exception as e:
+        raise RuntimeError("Failed to initialize Firebase") from e
+
 db = firestore.client()
 bucket = storage.bucket()
+
+
+# --- Request models ---
+
+
+class CommentCreate(BaseModel):
+    comment: str
+    line_number: Optional[int] = None
+
+
+class PreferencesUpdate(BaseModel):
+    data: dict
 
 # --- API Endpoints ---
 
@@ -100,29 +133,24 @@ async def get_comments(pdf_name: str, page_num: int):
     return comments
 
 @app.post("/api/comments/{pdf_name}/{page_num}", status_code=status.HTTP_201_CREATED)
-async def post_comment(pdf_name: str, page_num: int, request: Request):
+async def post_comment(pdf_name: str, page_num: int, comment: CommentCreate):
     """Posts a new comment to Firestore."""
-    data = await request.json()
-    comment_text = data.get("comment")
-    line_number = data.get("line_number", "")
+    comment_text = comment.comment
+    line_number = comment.line_number
 
     if not comment_text:
         raise HTTPException(status_code=400, detail="Comment text is required")
 
-    line_number_int = -1
-    try:
-        line_number_int = int(line_number)
-    except (ValueError, TypeError):
-        pass
+    line_number_int = line_number if line_number is not None else -1
 
     collection_path = f"{pdf_name}_{page_num}"
     doc_ref = db.collection(collection_path).document()
     doc_ref.set({
-        "line": line_number,
+        "line": line_number if line_number is not None else "",
         "text": comment_text,
-        "line_number_int": line_number_int
+        "line_number_int": line_number_int,
     })
-    
+
     return JSONResponse(content={"message": "Comment added successfully", "comment_id": doc_ref.id})
 
 @app.delete("/api/comments/{pdf_name}/{page_num}/{comment_id}")
@@ -166,10 +194,10 @@ async def get_preferences():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/preferences", status_code=status.HTTP_200_OK)
-async def set_preferences(request: Request):
+async def set_preferences(preferences: PreferencesUpdate):
     """Saves the current state to Firestore."""
     try:
-        data = await request.json()
+        data = preferences.data
         doc_ref = db.collection("preferences").document("default-user")
         # Use set with merge=True to update fields without overwriting the whole document
         doc_ref.set(data, merge=True)
