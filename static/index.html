@@ -70,13 +70,13 @@
             filter: invert(100%);
         }
         .top-controls {
-            padding: 0.2rem 0.5rem; /* Reduced padding */
+            padding: 0.1rem 0.25rem; /* tighter horizontal padding */
             text-align: center;
             display: flex;
             flex-direction: row; /* Make it a row */
             justify-content: center;
             align-items: center;
-            gap: 1rem; /* Space between elements */
+            gap: 0.5rem; /* tighter spacing between elements */
             flex-wrap: nowrap; /* keep all controls on single row */
             overflow-x: auto; /* allow horizontal scroll if needed */
         }
@@ -91,9 +91,9 @@
         /* Ensure children can shrink so long user-status doesn't force wrapping */
         .top-controls > * { min-width: 0; }
         /* Auth controls layout and truncation for long emails */
-        #auth-controls { min-width: 0; display:flex; gap:0.5rem; align-items:center; margin-right:1rem; flex: 0 1 auto; max-width: 360px; }
+        #auth-controls { min-width: 0; display:flex; gap:0.5rem; align-items:center; margin-right:0.25rem; flex: 0 1 auto; max-width: 360px; }
         #auth-controls form { min-width: 0; display:flex; gap:0.5rem; align-items:center; flex: 0 1 auto; }
-        #auth-controls input { min-width: 0; max-width: 140px; }
+        #auth-controls input { min-width: 0; max-width: 140px; padding:4px; }
         .pagination-controls { flex: 0 0 auto; }
         #user-status {
             white-space: nowrap;
