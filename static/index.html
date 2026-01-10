@@ -184,9 +184,13 @@
                     <button id="next-page">التالي ››</button>
                 </div>
                 <div id="auth-controls" style="display:flex;gap:0.5rem;align-items:center;margin-right:1rem;">
+                    <form id="auth-form" style="display:flex;gap:0.5rem;align-items:center;">
+                        <input id="auth-email" type="email" placeholder="البريد الإلكتروني" style="padding:6px;border-radius:4px;border:1px solid rgba(255,255,255,0.05);background:transparent;color:var(--text-color)">
+                        <input id="auth-password" type="password" placeholder="كلمة المرور" style="padding:6px;border-radius:4px;border:1px solid rgba(255,255,255,0.05);background:transparent;color:var(--text-color)">
+                        <button id="auth-signin" type="button">تسجيل دخول</button>
+                        <button id="auth-signup" type="button">تسجيل</button>
+                    </form>
                     <span id="user-status">غير مسجل</span>
-                    <button id="btn-login">تسجيل دخول</button>
-                    <button id="btn-signup">تسجيل</button>
                     <button id="btn-logout" style="display:none">تسجيل خروج</button>
                 </div>
             </div>
@@ -430,8 +434,11 @@
                     firebase.initializeApp(firebaseConfig);
                 }
 
-                const btnLogin = document.getElementById('btn-login');
-                const btnSignup = document.getElementById('btn-signup');
+                const authForm = document.getElementById('auth-form');
+                const authEmail = document.getElementById('auth-email');
+                const authPassword = document.getElementById('auth-password');
+                const authSignin = document.getElementById('auth-signin');
+                const authSignup = document.getElementById('auth-signup');
                 const btnLogout = document.getElementById('btn-logout');
                 const userStatus = document.getElementById('user-status');
 
@@ -440,14 +447,12 @@
                         user.getIdToken().then(t => localStorage.setItem('idToken', t));
                         userStatus.textContent = user.email || user.uid;
                         btnLogout.style.display = 'inline-block';
-                        btnLogin.style.display = 'none';
-                        btnSignup.style.display = 'none';
+                        if (authForm) authForm.style.display = 'none';
                     } else {
                         localStorage.removeItem('idToken');
                         userStatus.textContent = 'غير مسجل';
                         btnLogout.style.display = 'none';
-                        btnLogin.style.display = 'inline-block';
-                        btnSignup.style.display = 'inline-block';
+                        if (authForm) authForm.style.display = 'flex';
                     }
                 }
 
@@ -459,29 +464,38 @@
                         await loadAppState(token);
                     });
 
-                    btnLogin.addEventListener('click', async () => {
-                        const email = prompt('البريد الإلكتروني:');
-                        const password = prompt('كلمة المرور:');
-                        if (!email || !password) return;
-                        try {
-                            const cred = await firebase.auth().signInWithEmailAndPassword(email, password);
-                            const token = await cred.user.getIdToken();
-                            localStorage.setItem('idToken', token);
-                            updateUIForUser(cred.user);
-                        } catch (e) { console.error('Login failed', e); alert('فشل في تسجيل الدخول'); }
-                    });
+                    // prevent form submit reload
+                    if (authForm) {
+                        authForm.addEventListener('submit', (e) => { e.preventDefault(); });
+                    }
 
-                    btnSignup.addEventListener('click', async () => {
-                        const email = prompt('البريد الإلكتروني للتسجيل:');
-                        const password = prompt('كلمة المرور:');
-                        if (!email || !password) return;
-                        try {
-                            const cred = await firebase.auth().createUserWithEmailAndPassword(email, password);
-                            const token = await cred.user.getIdToken();
-                            localStorage.setItem('idToken', token);
-                            updateUIForUser(cred.user);
-                        } catch (e) { console.error('Signup failed', e); alert('فشل في التسجيل'); }
-                    });
+                    if (authSignin) {
+                        authSignin.addEventListener('click', async () => {
+                            const email = authEmail.value && authEmail.value.trim();
+                            const password = authPassword.value || '';
+                            if (!email || !password) { alert('أدخل البريد الإلكتروني وكلمة المرور'); return; }
+                            try {
+                                const cred = await firebase.auth().signInWithEmailAndPassword(email, password);
+                                const token = await cred.user.getIdToken();
+                                localStorage.setItem('idToken', token);
+                                updateUIForUser(cred.user);
+                            } catch (e) { console.error('Login failed', e); alert('فشل في تسجيل الدخول'); }
+                        });
+                    }
+
+                    if (authSignup) {
+                        authSignup.addEventListener('click', async () => {
+                            const email = authEmail.value && authEmail.value.trim();
+                            const password = authPassword.value || '';
+                            if (!email || !password) { alert('أدخل البريد الإلكتروني وكلمة المرور'); return; }
+                            try {
+                                const cred = await firebase.auth().createUserWithEmailAndPassword(email, password);
+                                const token = await cred.user.getIdToken();
+                                localStorage.setItem('idToken', token);
+                                updateUIForUser(cred.user);
+                            } catch (e) { console.error('Signup failed', e); alert('فشل في التسجيل'); }
+                        });
+                    }
 
                     btnLogout.addEventListener('click', async () => {
                         try { await firebase.auth().signOut(); updateUIForUser(null); } catch (e) { console.error(e); }
