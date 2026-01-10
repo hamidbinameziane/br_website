@@ -1,9 +1,8 @@
 import os
-import io
 import json
 from typing import List
 
-from fastapi import FastAPI, Request, Response, HTTPException, status
+from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 import fitz  # PyMuPDF
 import firebase_admin
@@ -13,10 +12,11 @@ from firebase_admin import credentials, firestore, storage
 app = FastAPI()
 
 # --- Security and Configuration ---
-DELETE_PASSWORD = os.getenv("DELETE_PASSWORD", "1234567890")
+DELETE_PASSWORD = os.getenv("DELETE_PASSWORD")
+if not DELETE_PASSWORD:
+    raise RuntimeError("DELETE_PASSWORD environment variable not set.")
 
-# Cache for PDF page counts
-pdf_info_cache = {}
+
 
 # --- Firebase Setup ---
 SERVICE_ACCOUNT_JSON_STRING = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
@@ -26,7 +26,7 @@ if SERVICE_ACCOUNT_JSON_STRING:
     service_account_info = json.loads(SERVICE_ACCOUNT_JSON_STRING)
     cred = credentials.Certificate(service_account_info)
 else:
-    cred = credentials.Certificate("firebase-service-account.json")
+    raise RuntimeError("FIREBASE_SERVICE_ACCOUNT_JSON environment variable not set.")
 
 # Initialize Firebase with Storage
 firebase_admin.initialize_app(cred, {'storageBucket': STORAGE_BUCKET})
@@ -49,8 +49,6 @@ async def list_pdfs():
 
 @app.get("/api/pdf-info/{pdf_name}")
 async def get_pdf_info(pdf_name: str):
-    if pdf_name in pdf_info_cache:
-        return JSONResponse(content={"num_pages": pdf_info_cache[pdf_name]})
     try:
         blob = bucket.blob(pdf_name)
         if not blob.exists():
@@ -60,7 +58,6 @@ async def get_pdf_info(pdf_name: str):
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         num_pages = doc.page_count
         doc.close()
-        pdf_info_cache[pdf_name] = num_pages
         return JSONResponse(content={"num_pages": num_pages})
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)

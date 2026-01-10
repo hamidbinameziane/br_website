@@ -1,5 +1,6 @@
 # Firebase service account key
-firebase-service-account.json
+firebase-service-account1.json
+firebase-service-account2.json
 
 # Python cache
 __pycache__/
