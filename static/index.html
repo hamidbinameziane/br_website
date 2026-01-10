@@ -502,8 +502,8 @@
                         btnLogout.style.display = 'inline-block';
                         if (authForm) authForm.style.display = 'none';
                     } else {
-                        localStorage.removeItem('idToken');
-                        userStatus.textContent = 'غير مسجل';
+                            localStorage.removeItem('idToken');
+                            userStatus.textContent = '';
                         btnLogout.style.display = 'none';
                         if (authForm) authForm.style.display = 'flex';
                     }
