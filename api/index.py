@@ -22,6 +22,10 @@ if not DELETE_PASSWORD:
 # Cache for PDF page counts
 pdf_info_cache = {}
 
+# --- Constants ---
+DEFAULT_USER = "default-user"
+PREFERENCES_COLLECTION = "preferences"
+
 # --- Firebase Setup ---
 SERVICE_ACCOUNT_JSON_STRING = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
 STORAGE_BUCKET = os.getenv("FIREBASE_STORAGE_BUCKET")  # e.g., your-project-id.appspot.com
@@ -55,6 +59,31 @@ db = firestore.client()
 bucket = storage.bucket()
 
 
+# --- Helper Functions ---
+def load_pdf_from_storage(pdf_name: str) -> tuple:
+    """Load PDF bytes and fitz document from Firebase Storage.
+    
+    Args:
+        pdf_name: Name of the PDF file
+        
+    Returns:
+        Tuple of (pdf_bytes, fitz_document)
+        
+    Raises:
+        HTTPException: If PDF not found or cannot be opened
+    """
+    blob = bucket.blob(pdf_name)
+    if not blob.exists():
+        raise HTTPException(status_code=404, detail="PDF not found in storage")
+    
+    try:
+        pdf_bytes = blob.download_as_bytes()
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        return pdf_bytes, doc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load PDF: {str(e)}")
+
+
 # --- Request models ---
 
 
@@ -82,47 +111,34 @@ async def list_pdfs():
 
 @app.get("/api/pdf-info/{pdf_name}")
 async def get_pdf_info(pdf_name: str):
+    """Get the page count of a PDF file."""
     if pdf_name in pdf_info_cache:
         return JSONResponse(content={"num_pages": pdf_info_cache[pdf_name]})
-    try:
-        blob = bucket.blob(pdf_name)
-        if not blob.exists():
-            raise HTTPException(status_code=404, detail="PDF not found in storage")
-        
-        pdf_bytes = blob.download_as_bytes()
-        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        num_pages = doc.page_count
-        doc.close()
-        pdf_info_cache[pdf_name] = num_pages
-        return JSONResponse(content={"num_pages": num_pages})
-    except Exception as e:
-        return JSONResponse(content={"error": str(e)}, status_code=500)
+    
+    _, doc = load_pdf_from_storage(pdf_name)
+    num_pages = doc.page_count
+    doc.close()
+    pdf_info_cache[pdf_name] = num_pages
+    return JSONResponse(content={"num_pages": num_pages})
 
 @app.get("/api/pdf-page/{pdf_name}/{page_num}")
 async def get_pdf_page_as_image(pdf_name: str, page_num: int):
-    try:
-        blob = bucket.blob(pdf_name)
-        if not blob.exists():
-            raise HTTPException(status_code=404, detail="PDF not found in storage")
-
-        pdf_bytes = blob.download_as_bytes()
-        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        
-        if 0 < page_num <= doc.page_count:
-            page = doc.load_page(page_num - 1)
-            pix = page.get_pixmap(dpi=150)
-            img_bytes = pix.tobytes("png")
-            doc.close()
-            return Response(content=img_bytes, media_type="image/png")
-        else:
-            doc.close()
-            return JSONResponse(content={"error": "Page not found"}, status_code=404)
-    except Exception as e:
-        return JSONResponse(content={"error": str(e)}, status_code=500)
+    """Get a specific page from a PDF as a PNG image."""
+    _, doc = load_pdf_from_storage(pdf_name)
+    
+    if not (0 < page_num <= doc.page_count):
+        doc.close()
+        raise HTTPException(status_code=404, detail="Page not found")
+    
+    page = doc.load_page(page_num - 1)
+    pix = page.get_pixmap(dpi=150)
+    img_bytes = pix.tobytes("png")
+    doc.close()
+    return Response(content=img_bytes, media_type="image/png")
 
 @app.get("/api/comments/{pdf_name}/{page_num}", response_model=List[dict])
 async def get_comments(pdf_name: str, page_num: int):
-    """Gets comments from Firestore."""
+    """Get all comments for a specific PDF page."""
     collection_path = f"{pdf_name}_{page_num}"
     docs = db.collection(collection_path).order_by("line_number_int").get()
     comments = []
@@ -134,21 +150,15 @@ async def get_comments(pdf_name: str, page_num: int):
 
 @app.post("/api/comments/{pdf_name}/{page_num}", status_code=status.HTTP_201_CREATED)
 async def post_comment(pdf_name: str, page_num: int, comment: CommentCreate):
-    """Posts a new comment to Firestore."""
-    comment_text = comment.comment
-    line_number = comment.line_number
-
-    if not comment_text:
+    """Create a new comment on a specific PDF page."""
+    if not comment.comment:
         raise HTTPException(status_code=400, detail="Comment text is required")
-
-    line_number_int = line_number if line_number is not None else -1
 
     collection_path = f"{pdf_name}_{page_num}"
     doc_ref = db.collection(collection_path).document()
     doc_ref.set({
-        "line": line_number if line_number is not None else "",
-        "text": comment_text,
-        "line_number_int": line_number_int,
+        "line_number": comment.line_number if comment.line_number is not None else -1,
+        "text": comment.comment,
     })
 
     return JSONResponse(content={"message": "Comment added successfully", "comment_id": doc_ref.id})
@@ -160,7 +170,7 @@ async def delete_comment(
     comment_id: str,
     request: Request,
 ):
-    """Deletes a specific comment from Firestore."""
+    """Delete a specific comment from a PDF page."""
     password_data = await request.json()
     provided_password = password_data.get("password")
     
@@ -181,26 +191,18 @@ async def delete_comment(
 
 @app.get("/api/preferences")
 async def get_preferences():
-    """Retrieves the last saved state from Firestore."""
-    try:
-        doc_ref = db.collection("preferences").document("default-user")
-        doc = doc_ref.get()
-        if doc.exists:
-            return JSONResponse(content=doc.to_dict())
-        else:
-            # Return a default state if no preferences are saved yet
-            return JSONResponse(content={"last_opened_pdf": None, "pdf_positions": {}})
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    """Retrieve the last saved user preferences from Firestore."""
+    doc_ref = db.collection(PREFERENCES_COLLECTION).document(DEFAULT_USER)
+    doc = doc_ref.get()
+    if doc.exists:
+        return JSONResponse(content=doc.to_dict())
+    # Return default state if no preferences are saved yet
+    return JSONResponse(content={"last_opened_pdf": None, "pdf_positions": {}})
 
 @app.post("/api/preferences", status_code=status.HTTP_200_OK)
 async def set_preferences(preferences: PreferencesUpdate):
-    """Saves the current state to Firestore."""
-    try:
-        data = preferences.data
-        doc_ref = db.collection("preferences").document("default-user")
-        # Use set with merge=True to update fields without overwriting the whole document
-        doc_ref.set(data, merge=True)
-        return JSONResponse(content={"message": "Preferences saved successfully"})
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    """Save user preferences to Firestore."""
+    doc_ref = db.collection(PREFERENCES_COLLECTION).document(DEFAULT_USER)
+    # Use set with merge=True to update fields without overwriting the whole document
+    doc_ref.set(preferences.data, merge=True)
+    return JSONResponse(content={"message": "Preferences saved successfully"})
