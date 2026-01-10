@@ -174,29 +174,7 @@
 <body>
     <div class="main-container">
         <div class="top-row">
-            <div class="top-controls">
-                <label for="pdf-select">اختر ملف PDF:</label>
-                <select id="pdf-select">
-                    <!-- Options will be populated dynamically by JavaScript -->
-                </select>
-                <label id="goto-page-label" for="goto-page-input" class="go-to-page-margin">اذهب لصفحة:</label>
-                <input type="number" id="goto-page-input" min="1">
-                <div class="pagination-controls">
-                    <button id="prev-page">‹‹ السابق</button>
-                    <span id="page-num-display"></span>
-                    <button id="next-page">التالي ››</button>
-                </div>
-                <div id="auth-controls" style="display:flex;gap:0.5rem;align-items:center;margin-right:1rem;">
-                    <form id="auth-form" method="post" action="#" style="display:flex;gap:0.5rem;align-items:center;">
-                        <input id="auth-email" autocomplete="username" type="email" placeholder="البريد الإلكتروني" style="padding:6px;border-radius:4px;border:1px solid rgba(255,255,255,0.05);background:transparent;color:var(--text-color)">
-                        <input id="auth-password" autocomplete="current-password" type="password" placeholder="كلمة المرور" style="padding:6px;border-radius:4px;border:1px solid rgba(255,255,255,0.05);background:transparent;color:var(--text-color)">
-                        <button id="auth-signin" type="button">تسجيل دخول</button>
-                        <button id="auth-signup" type="button">تسجيل</button>
-                    </form>
-                    <span id="user-status">غير مسجل</span>
-                    <button id="btn-logout" style="display:none">تسجيل خروج</button>
-                </div>
-            </div>
+            
         </div>
 
         <div class="content-row">
