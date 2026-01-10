@@ -262,9 +262,18 @@
         function renderPages() {
             const leftNum = state.leftPageNum;
             const rightNum = leftNum + 1;
+            // compute target width from container and device pixel ratio
+            const leftContainerWidth = leftPdfImage.parentElement.clientWidth || Math.floor(window.innerWidth/2);
+            const dpr = window.devicePixelRatio || 1;
+            const targetW = Math.round(Math.max(300, Math.min(2500, leftContainerWidth * dpr)));
+
+            function makeUrl(page) {
+                return `/api/pdf-page/${state.pdfName}/${page}?w=${targetW}&fmt=webp`;
+            }
 
             if (leftNum > 0 && leftNum <= state.totalNumPages) {
-                leftPdfImage.src = `/api/pdf-page/${state.pdfName}/${leftNum}`;
+                leftPdfImage.loading = 'eager';
+                leftPdfImage.src = makeUrl(leftNum);
                 fetchComments('left', leftNum);
             } else {
                 leftPdfImage.src = '';
@@ -275,8 +284,15 @@
             }
 
             if (rightNum > 0 && rightNum <= state.totalNumPages) {
-                rightPdfImage.src = `/api/pdf-page/${state.pdfName}/${rightNum}`;
+                rightPdfImage.loading = 'lazy';
+                rightPdfImage.src = makeUrl(rightNum);
                 fetchComments('right', rightNum);
+                // prefetch the next page after the right page
+                const nextToPrefetch = rightNum + 1;
+                if (nextToPrefetch <= state.totalNumPages) {
+                    const p = new Image();
+                    p.src = makeUrl(nextToPrefetch);
+                }
             } else {
                 rightPdfImage.src = '';
                 document.getElementById('right-comment-text').value = '';
@@ -288,6 +304,13 @@
             let displayLeft = leftNum > 0 && leftNum <= state.totalNumPages ? leftNum : '-';
             let displayRight = rightNum > 0 && rightNum <= state.totalNumPages ? rightNum : '-';
             pageNumDisplay.textContent = `صفحة ${displayLeft} - ${displayRight} / ${state.totalNumPages}`;
+            // also prefetch previous page (fast back-navigation)
+            const prevToPrefetch = leftNum - 1;
+            if (prevToPrefetch > 0) {
+                const p2 = new Image();
+                p2.src = `/api/pdf-page/${state.pdfName}/${prevToPrefetch}?w=${targetW}&fmt=webp`;
+            }
+
             saveState();
         }
 

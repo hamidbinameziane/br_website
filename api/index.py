@@ -6,8 +6,6 @@ from typing import List, Optional
 from fastapi import FastAPI, Request, Response, HTTPException, status, Depends
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 import fitz  # PyMuPDF
-import io
-from PIL import Image
 import firebase_admin
 from firebase_admin import credentials, firestore, storage, auth as firebase_auth
 from pydantic import BaseModel
@@ -118,94 +116,25 @@ async def get_pdf_info(pdf_name: str):
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 @app.get("/api/pdf-page/{pdf_name}/{page_num}")
-async def get_pdf_page_as_image(pdf_name: str, page_num: int, fmt: Optional[str] = "webp"):
-    """Pre-render all pages on first request and store cached images in Cloud Storage.
-
-    Behavior:
-      - If cached image exists at `cache/{pdf_name}/page_{page_num}.webp`, return it.
-      - Otherwise download PDF, render all pages at DEFAULT_WIDTH, save each as WebP
-        under `cache/{pdf_name}/page_{i}.webp`, set Cache-Control, and then return
-        the requested page.
-
-    This moves CPU work to the first viewer request and makes subsequent requests
-    serve static files from Storage/edge.
-    """
+async def get_pdf_page_as_image(pdf_name: str, page_num: int):
     try:
         blob = bucket.blob(pdf_name)
         if not blob.exists():
             raise HTTPException(status_code=404, detail="PDF not found in storage")
 
-        fmt = (fmt or "webp").lower()
-        if fmt not in ("webp", "png"):
-            fmt = "webp"
-
-        ext = "webp" if fmt == "webp" else "png"
-        cache_blob_path = f"cache/{pdf_name}/page_{page_num}.{ext}"
-        cache_blob = bucket.blob(cache_blob_path)
-
-        # If cached page exists, return it immediately
-        if cache_blob.exists():
-            content = cache_blob.download_as_bytes()
-            media_type = "image/webp" if ext == "webp" else "image/png"
-            headers = {"Cache-Control": "public, max-age=31536000, immutable"}
-            return Response(content=content, media_type=media_type, headers=headers)
-
-        # Not cached -> render all pages and cache them
         pdf_bytes = blob.download_as_bytes()
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        num_pages = doc.page_count
-
-        if not (0 < page_num <= num_pages):
+        
+        if 0 < page_num <= doc.page_count:
+            page = doc.load_page(page_num - 1)
+            pix = page.get_pixmap(dpi=150)
+            img_bytes = pix.tobytes("png")
+            doc.close()
+            return Response(content=img_bytes, media_type="image/png")
+        else:
             doc.close()
             return JSONResponse(content={"error": "Page not found"}, status_code=404)
-
-        DEFAULT_WIDTH = 1200
-        # render every page and upload to cache
-        for i in range(1, num_pages + 1):
-            try:
-                page = doc.load_page(i - 1)
-                rect = page.rect
-                scale = DEFAULT_WIDTH / rect.width
-                scale = max(0.2, min(4.0, scale))
-                mat = fitz.Matrix(scale, scale)
-                pix = page.get_pixmap(matrix=mat, alpha=False)
-
-                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-                buf = io.BytesIO()
-                if ext == "webp":
-                    img.save(buf, format="WEBP", quality=80)
-                    media_type = "image/webp"
-                else:
-                    img.save(buf, format="PNG", optimize=True)
-                    media_type = "image/png"
-                buf.seek(0)
-                content = buf.read()
-
-                target_path = f"cache/{pdf_name}/page_{i}.{ext}"
-                target_blob = bucket.blob(target_path)
-                try:
-                    target_blob.upload_from_string(content, content_type=media_type)
-                    target_blob.cache_control = "public, max-age=31536000, immutable"
-                    target_blob.patch()
-                except Exception as e:
-                    logging.warning("Failed to upload cached page %s: %s", target_path, e)
-            except Exception as e:
-                logging.exception("Failed to render page %s of %s: %s", i, pdf_name, e)
-
-        doc.close()
-
-        # After pre-rendering, return the requested page from cache (or a fallback)
-        if cache_blob.exists():
-            content = cache_blob.download_as_bytes()
-            media_type = "image/webp" if ext == "webp" else "image/png"
-            headers = {"Cache-Control": "public, max-age=31536000, immutable"}
-            return Response(content=content, media_type=media_type, headers=headers)
-        else:
-            return JSONResponse(content={"error": "Failed to generate cached images"}, status_code=500)
-    except HTTPException:
-        raise
     except Exception as e:
-        logging.exception("Error during pre-rendering of PDF pages")
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 @app.get("/api/comments/{pdf_name}/{page_num}", response_model=List[dict])
