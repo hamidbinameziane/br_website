@@ -3,11 +3,11 @@ import json
 import logging
 from typing import List, Optional
 
-from fastapi import FastAPI, Request, Response, HTTPException, status, Depends
+from fastapi import FastAPI, Request, Response, HTTPException, status
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 import fitz  # PyMuPDF
 import firebase_admin
-from firebase_admin import credentials, firestore, storage, auth as firebase_auth
+from firebase_admin import credentials, firestore, storage
 from pydantic import BaseModel
 
 # --- FastAPI App Setup ---
@@ -15,8 +15,9 @@ app = FastAPI()
 
 # --- Security and Configuration ---
 logging.basicConfig(level=logging.INFO)
-# Note: DELETE_PASSWORD is deprecated when using Firebase Auth; kept for compatibility if needed.
 DELETE_PASSWORD = os.getenv("DELETE_PASSWORD")
+if not DELETE_PASSWORD:
+    raise RuntimeError("DELETE_PASSWORD environment variable must be set for security.")
 
 # Cache for PDF page counts
 pdf_info_cache = {}
@@ -64,19 +65,6 @@ class CommentCreate(BaseModel):
 
 class PreferencesUpdate(BaseModel):
     data: dict
-
-
-async def get_current_user(request: Request):
-    """Verify Firebase ID token from Authorization header and return decoded token."""
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing auth token")
-    id_token = auth_header.split(" ", 1)[1]
-    try:
-        decoded = firebase_auth.verify_id_token(id_token)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-    return decoded
 
 # --- API Endpoints ---
 
@@ -145,7 +133,7 @@ async def get_comments(pdf_name: str, page_num: int):
     return comments
 
 @app.post("/api/comments/{pdf_name}/{page_num}", status_code=status.HTTP_201_CREATED)
-async def post_comment(pdf_name: str, page_num: int, comment: CommentCreate, user: dict = Depends(get_current_user)):
+async def post_comment(pdf_name: str, page_num: int, comment: CommentCreate):
     """Posts a new comment to Firestore."""
     comment_text = comment.comment
     line_number = comment.line_number
@@ -157,13 +145,10 @@ async def post_comment(pdf_name: str, page_num: int, comment: CommentCreate, use
 
     collection_path = f"{pdf_name}_{page_num}"
     doc_ref = db.collection(collection_path).document()
-    # store user info alongside the comment
     doc_ref.set({
         "line": line_number if line_number is not None else "",
         "text": comment_text,
         "line_number_int": line_number_int,
-        "user_id": user.get("uid"),
-        "user_email": user.get("email"),
     })
 
     return JSONResponse(content={"message": "Comment added successfully", "comment_id": doc_ref.id})
@@ -173,21 +158,23 @@ async def delete_comment(
     pdf_name: str,
     page_num: int,
     comment_id: str,
-    user: dict = Depends(get_current_user),
+    request: Request,
 ):
-    """Deletes a specific comment from Firestore. Requires admin custom claim."""
-    # require admin claim on the decoded token
-    if not user.get("admin"):
-        raise HTTPException(status_code=403, detail="Admin privileges required")
+    """Deletes a specific comment from Firestore."""
+    password_data = await request.json()
+    provided_password = password_data.get("password")
+    
+    if provided_password != DELETE_PASSWORD:
+        raise HTTPException(status_code=403, detail="Incorrect password")
 
     collection_path = f"{pdf_name}_{page_num}"
     doc_ref = db.collection(collection_path).document(comment_id)
-
+    
     if not doc_ref.get().exists:
         raise HTTPException(status_code=404, detail="Comment not found")
-
+        
     doc_ref.delete()
-
+    
     return JSONResponse(content={"message": "Comment deleted successfully"})
 
 # --- User Preferences Endpoints ---
