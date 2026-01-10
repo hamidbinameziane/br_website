@@ -214,26 +214,32 @@ async def delete_comment(
 # --- User Preferences Endpoints ---
 
 @app.get("/api/preferences")
-async def get_preferences():
-    """Retrieves the last saved state from Firestore."""
+async def get_preferences(user=Depends(verify_id_token)):
+    """Retrieve the authenticated user's preferences from Firestore.
+
+    Returns a default structure if no preferences exist yet.
+    """
     try:
-        doc_ref = db.collection("preferences").document("default-user")
+        uid = user.get("uid")
+        doc_ref = db.collection("preferences").document(uid)
         doc = doc_ref.get()
         if doc.exists:
             return JSONResponse(content=doc.to_dict())
         else:
-            # Return a default state if no preferences are saved yet
             return JSONResponse(content={"last_opened_pdf": None, "pdf_positions": {}})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/preferences", status_code=status.HTTP_200_OK)
-async def set_preferences(preferences: PreferencesUpdate):
-    """Saves the current state to Firestore."""
+async def set_preferences(preferences: PreferencesUpdate, user=Depends(verify_id_token)):
+    """Save the authenticated user's preferences to Firestore.
+
+    Expects a JSON body matching `PreferencesUpdate` (object with `data` field).
+    """
     try:
         data = preferences.data
-        doc_ref = db.collection("preferences").document("default-user")
-        # Use set with merge=True to update fields without overwriting the whole document
+        uid = user.get("uid")
+        doc_ref = db.collection("preferences").document(uid)
         doc_ref.set(data, merge=True)
         return JSONResponse(content={"message": "Preferences saved successfully"})
     except Exception as e:

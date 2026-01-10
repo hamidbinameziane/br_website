@@ -245,13 +245,13 @@
                 pdfPositions[state.pdfName] = state.leftPageNum;
             }
             try {
+                const token = localStorage.getItem('idToken');
+                const headers = { 'Content-Type': 'application/json' };
+                if (token) headers['Authorization'] = 'Bearer ' + token;
                 await fetch('/api/preferences', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        last_opened_pdf: state.pdfName,
-                        pdf_positions: pdfPositions
-                    })
+                    headers,
+                    body: JSON.stringify({ data: { last_opened_pdf: state.pdfName, pdf_positions: pdfPositions } })
                 });
             } catch (error) {
                 console.error("Failed to save state:", error);
@@ -494,10 +494,21 @@
         // --- Initial Load ---
         async function initialize() {
             try {
-                const prefsResponse = await fetch('/api/preferences');
-                const savedPrefs = await prefsResponse.json();
+                // Load preferences if user is authenticated
+                const token = localStorage.getItem('idToken');
+                let savedPrefs = { last_opened_pdf: null, pdf_positions: {} };
+                if (token) {
+                    try {
+                        const prefsResponse = await fetch('/api/preferences', { headers: { 'Authorization': 'Bearer ' + token } });
+                        if (prefsResponse.ok) {
+                            savedPrefs = await prefsResponse.json();
+                        } else {
+                            console.warn('Could not load preferences (status:', prefsResponse.status, ')');
+                        }
+                    } catch (e) { console.warn('Failed to fetch preferences:', e); }
+                }
                 pdfPositions = savedPrefs.pdf_positions || {};
-                
+
                 const pdfsResponse = await fetch('/api/list-pdfs');
                 const pdfFiles = await pdfsResponse.json();
 
@@ -513,8 +524,7 @@
                 
                 if (lastOpenedPdf) {
                     // Use the per-book position if available, otherwise default to 1
-                    const lastPageForThisPdf = pdfPositions[lastOpenedPdf] || 1;
-                    loadPdf(lastOpenedPdf, lastPageForThisPdf);
+                    loadPdf(lastOpenedPdf);
                 } else {
                     document.body.innerHTML = "<h1>No PDFs found.</h1>";
                 }

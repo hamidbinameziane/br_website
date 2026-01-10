@@ -73,8 +73,8 @@ This project supports user authentication via Firebase Authentication (recommend
 2. Add the `FIREBASE_API_KEY` environment variable to your deployment (Vercel) or local `.env` file.
 3. The frontend should use the Firebase Web SDK to sign up / sign in users and obtain an ID token. The ID token must be sent to protected API endpoints in the `Authorization: Bearer <idToken>` header.
 
-Server-side notes:
 - The backend uses the Firebase Admin SDK and verifies ID tokens on protected endpoints. Endpoints that modify data (posting or deleting comments) are protected and require a valid ID token.
+- User preferences are stored per-user in Firestore under the `preferences` collection using the user's `uid` as the document id. This stores `last_opened_pdf` and `pdf_positions` (an object mapping pdf filename → last left-page number) so each user gets their own saved state.
 - To force logout of a user from the server side, call `firebase_admin.auth.revoke_refresh_tokens(uid)`. ID tokens remain valid until expiry (~1 hour) but refresh tokens will be invalidated.
 
 If you'd like, I can add the frontend login/signup UI and wire it to the backend now.
