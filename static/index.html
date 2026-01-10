@@ -75,7 +75,8 @@
             justify-content: center;
             align-items: center;
             gap: 1rem; /* Space between elements */
-            flex-wrap: wrap;
+            flex-wrap: nowrap; /* keep all controls on single row */
+            overflow-x: auto; /* allow horizontal scroll if needed */
         }
         .top-controls label, .top-controls select, .top-controls input, .top-controls button {
             font-size: 0.8rem; /* Even smaller font size for all top controls */
@@ -88,8 +89,10 @@
         /* Ensure children can shrink so long user-status doesn't force wrapping */
         .top-controls > * { min-width: 0; }
         /* Auth controls layout and truncation for long emails */
-        #auth-controls { min-width: 0; display:flex; gap:0.5rem; align-items:center; margin-right:1rem; }
-        #auth-controls form { min-width: 0; display:flex; gap:0.5rem; align-items:center; }
+        #auth-controls { min-width: 0; display:flex; gap:0.5rem; align-items:center; margin-right:1rem; flex: 0 1 auto; max-width: 360px; }
+        #auth-controls form { min-width: 0; display:flex; gap:0.5rem; align-items:center; flex: 0 1 auto; }
+        #auth-controls input { min-width: 0; max-width: 140px; }
+        .pagination-controls { flex: 0 0 auto; }
         #user-status {
             white-space: nowrap;
             overflow: hidden;
