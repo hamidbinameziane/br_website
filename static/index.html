@@ -13,10 +13,11 @@
             --input-bg-color: #333;
             --button-color: #4CAF50;
         }
-        html, body {
-            height: 100%;
+        body {
             margin: 0;
             font-family: system-ui, sans-serif;
+            display: flex;
+            min-height: 100vh;
             background-color: var(--bg-color);
             color: var(--text-color);
         }
@@ -24,111 +25,129 @@
             display: flex;
             width: 100%;
             height: 100vh;
-            box-sizing: border-box;
         }
-
-        /* Narrow fixed side panels so PDF gets maximum width */
         .comments-section {
-            width: 260px;
-            flex: none;
-            padding: 12px;
+            flex: 0.8; /* Reduced size for comments */
+            padding: 1rem;
             background-color: var(--panel-bg-color);
             display: flex;
             flex-direction: column;
             overflow-y: auto;
-            box-sizing: border-box;
         }
         #left-comments { border-left: 1px solid var(--border-color); }
         #right-comments { border-right: 1px solid var(--border-color); }
-
-        /* Central viewer grows to fill remaining space */
+        
         .pdf-viewer-main {
-            flex: 1 1 auto;
+            flex: 5.4; /* Increased size for PDF viewer */
             display: flex;
             flex-direction: column;
-            padding: 8px 6px;
-            min-width: 0; /* allow flex children to shrink properly */
-            box-sizing: border-box;
+            padding: 0 1rem; 
         }
-
-        /* Top controls stay visible and compact */
-        .top-controls {
-            padding: 8px 0.4rem;
-            display: flex;
-            flex-direction: row;
-            justify-content: space-between;
-            align-items: center;
-            gap: 0.75rem;
-            flex-wrap: wrap;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-            background: linear-gradient(180deg, rgba(26,26,26,0.95), rgba(26,26,26,0.85));
-            border-bottom: 1px solid rgba(255,255,255,0.03);
-        }
-        .top-controls .left, .top-controls .right { display:flex; gap:0.5rem; align-items:center; }
-        .top-controls label, .top-controls select, .top-controls input, .top-controls button {
-            font-size: 0.95rem;
-            padding: 6px 10px;
-            color: var(--text-color);
-            background: transparent;
-            border-radius: 4px;
-            border: 1px solid rgba(255,255,255,0.03);
-        }
-        .top-controls input[type="number"] { width: 72px; }
-        #goto-page-label { cursor:pointer; }
-
-        /* PDF display area: fill remaining vertical space and center content */
         .pdf-display-area {
             display: flex;
-            flex-direction: row;
-            flex: 1 1 auto;
-            gap: 12px;
-            align-items: center;
-            justify-content: center;
+            flex-direction: row; /* Explicitly set to row for LTR ordering of images */
+            flex: 1;
+            gap: 1rem;
             overflow: auto;
-            padding: 8px;
-            box-sizing: border-box;
+            align-items: flex-start;
         }
-
-        /* Each page container shares the available width; allow single-column on narrow screens */
         .pdf-page-container {
-            flex: 1 1 50%;
+            flex: 1;
+            text-align: center;
             display: flex;
-            align-items: center;
+            flex-direction: column;
             justify-content: center;
-            width: 50%;
-            max-width: 100%;
-            height: calc(100vh - 140px);
-            box-sizing: border-box;
+            align-items: center;
         }
-
-        /* Make images as large as possible while keeping aspect ratio */
         .pdf-page-container img {
             border: 1px solid var(--border-color);
             max-width: 100%;
             max-height: 100%;
-            width: auto;
-            height: auto;
             object-fit: contain;
             background-color: white;
-            display: block;
+            filter: invert(100%);
         }
-
-        /* Comments and form styling */
-        .comment-list { list-style-type: none; padding: 0; flex-grow: 1; }
-        .comment-list li { padding: 0.5rem; border-bottom: 1px solid var(--border-color); word-wrap: break-word; font-size: 0.95rem; }
-        .comment-form textarea, .comment-form input { width: 100%; margin-bottom: 0.5rem; box-sizing: border-box; background-color: var(--input-bg-color); color: var(--text-color); border: 1px solid #555; font-size: 0.95rem; padding: 6px; }
-        button { background-color: var(--button-color); color: white; border: none; padding: 8px 12px; cursor: pointer; border-radius: 5px; font-size: 0.95rem; }
-        button:hover { opacity: 0.9; }
-
-        /* Responsive behavior: hide side comments on narrow screens and stack pages vertically */
-        @media (max-width: 900px) {
-            .comments-section { display: none; }
-            .pdf-page-container { width: 100%; flex-basis: 100%; }
-            .pdf-display-area { flex-direction: column; gap: 10px; padding: 6px; }
-            .top-controls { justify-content: center; }
+        .top-controls {
+            padding: 0.2rem 0.5rem; /* Reduced padding */
+            text-align: center;
+            display: flex;
+            flex-direction: row; /* Make it a row */
+            justify-content: center;
+            align-items: center;
+            gap: 1rem; /* Space between elements */
+            flex-wrap: wrap;
         }
+        .top-controls label, .top-controls select, .top-controls input, .top-controls button {
+            font-size: 0.8rem; /* Even smaller font size for all top controls */
+            padding: 3px 8px; /* Consistent padding */
+        }
+        .top-controls input[type="number"] {
+            width: 60px; /* Specific width for number input */
+            text-align: center;
+        }
+        /* Style for the clickable label */
+        #goto-page-label {
+            cursor: pointer;
+            text-decoration: none; /* Remove underline */
+            background-color: var(--button-color);
+            color: white;
+            border: none;
+            padding: 3px 8px; /* Match other buttons */
+            border-radius: 5px;
+            font-size: 0.8rem; /* Match other buttons */
+            line-height: normal; /* Ensure text alignment */
+            display: inline-flex; /* Allow padding and alignment */
+            align-items: center;
+            justify-content: center;
+        }
+        #goto-page-label:hover {
+            opacity: 0.8;
+        }
+        .pagination-controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .pagination-controls button {
+            padding: 3px 8px; /* Smaller buttons */
+        }
+        #page-num-display {
+            font-size: 0.8rem; /* Even smaller font size */
+            min-width: 80px; /* Adjust min-width */
+            text-align: center;
+        }
+        .comment-list {
+            list-style-type: none;
+            padding: 0;
+            flex-grow: 1;
+        }
+        .comment-list li {
+            padding: 0.5rem;
+            border-bottom: 1px solid var(--border-color);
+            word-wrap: break-word;
+            font-size: 0.9rem;
+        }
+        .comment-form textarea, .comment-form input {
+            width: 100%;
+            margin-bottom: 0.5rem;
+            box-sizing: border-box;
+            background-color: var(--input-bg-color);
+            color: var(--text-color);
+            border: 1px solid #555;
+            font-size: 0.9rem;
+            padding: 5px;
+        }
+        button {
+            background-color: var(--button-color);
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            cursor: pointer;
+            border-radius: 5px;
+            font-size: 0.9rem;
+        }
+        button:hover { opacity: 0.8; }
     </style>
     <!-- Firebase API key meta (replace with your key or inject at deploy) -->
     <meta name="firebase-api-key" content="REPLACE_WITH_YOUR_FIREBASE_API_KEY">
