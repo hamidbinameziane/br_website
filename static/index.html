@@ -205,6 +205,25 @@
     </div>
 
     <script>
+        // --- Firebase helper (requires you to include Firebase SDK and fill FIREBASE_CONFIG) ---
+        // Add Firebase SDK scripts in the <head> manually and replace FIREBASE_CONFIG with your app config.
+        // Example compat SDK scripts:
+        // <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+        // <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+        // Then initialize: firebase.initializeApp(FIREBASE_CONFIG)
+
+        async function getIdToken() {
+            try {
+                if (typeof firebase === 'undefined' || !firebase.auth) return null;
+                const user = firebase.auth().currentUser;
+                if (!user) return null;
+                return await user.getIdToken(true);
+            } catch (e) {
+                console.warn('Failed to get ID token:', e);
+                return null;
+            }
+        }
+
         // --- DOM Elements ---
         const pdfSelect = document.getElementById('pdf-select');
         const gotoPageInput = document.getElementById('goto-page-input');
@@ -342,9 +361,13 @@
 
             if (comment && pageNum > 0 && pageNum <= state.totalNumPages) {
                 try {
+                    const headers = { 'Content-Type': 'application/json' };
+                    const idToken = await getIdToken();
+                    if (idToken) headers['Authorization'] = 'Bearer ' + idToken;
+
                     await fetch(`/api/comments/${state.pdfName}/${pageNum}`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers,
                         body: JSON.stringify({ comment, line_number: line })
                     });
                     lineEl.value = '';
@@ -355,13 +378,14 @@
         }
         
         async function deleteComment(side, pageNum, commentId) {
-            const password = prompt("أدخل كلمة المرور للحذف:");
-            if (password === null) return;
             try {
+                const headers = { 'Content-Type': 'application/json' };
+                const idToken = await getIdToken();
+                if (idToken) headers['Authorization'] = 'Bearer ' + idToken;
+
                 const response = await fetch(`/api/comments/${state.pdfName}/${pageNum}/${commentId}`, {
                     method: 'DELETE',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ password })
+                    headers,
                 });
                 const result = await response.json();
                 alert(result.message || result.detail);
