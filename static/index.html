@@ -391,13 +391,16 @@
             } catch (error) { console.error(`Error deleting ${side} comment:`, error); alert('خطأ في حذف التعليق.'); }
         }
 
-        // --- Firebase Auth Setup ---
-        (function setupFirebaseAuth(){
+        // --- Firebase Auth Setup (fetch config from server) ---
+        (async function setupFirebaseAuth(){
             try {
-                const apiKey = document.querySelector('meta[name="firebase-api-key"]').content;
-                if (!apiKey || apiKey === 'REPLACE_WITH_YOUR_FIREBASE_API_KEY') {
-                    console.warn('Firebase API key not set in meta tag. Authentication will not work until set.');
+                const resp = await fetch('/api/firebase-config');
+                const cfg = await resp.json().catch(()=>({apiKey: ''}));
+                const apiKey = cfg.apiKey || '';
+                if (!apiKey) {
+                    console.warn('Firebase API key not provided by server; authentication disabled.');
                 }
+
                 const firebaseConfig = { apiKey };
                 if (typeof firebase !== 'undefined' && firebase.apps && !firebase.apps.length) {
                     firebase.initializeApp(firebaseConfig);

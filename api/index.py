@@ -238,3 +238,13 @@ async def set_preferences(preferences: PreferencesUpdate):
         return JSONResponse(content={"message": "Preferences saved successfully"})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/firebase-config")
+async def firebase_config():
+    """Return non-sensitive Firebase client configuration (apiKey) to the frontend.
+
+    The API key is safe to expose to clients; it's used by the Firebase Web SDK.
+    """
+    api_key = os.getenv("FIREBASE_API_KEY", "")
+    return JSONResponse(content={"apiKey": api_key})
