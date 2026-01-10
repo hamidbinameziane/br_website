@@ -429,12 +429,11 @@
                 }
 
                 if (typeof firebase !== 'undefined' && firebase.auth) {
-                    firebase.auth().onAuthStateChanged(user => {
+                    firebase.auth().onAuthStateChanged(async user => {
                         updateUIForUser(user);
-                        if (!appInitialized) {
-                            appInitialized = true;
-                            initialize();
-                        }
+                        const token = user ? await user.getIdToken() : null;
+                        // always reload app state on auth change to reflect per-user prefs
+                        await loadAppState(token);
                     });
 
                     btnLogin.addEventListener('click', async () => {
@@ -468,7 +467,8 @@
                     console.warn('Firebase SDK not loaded; auth buttons will not function.');
                     if (!appInitialized) {
                         appInitialized = true;
-                        initialize();
+                        // no firebase SDK: load public app state
+                        await loadAppState(null);
                     }
                 }
             } catch (err) {
@@ -502,11 +502,9 @@
         leftCommentForm.addEventListener('submit', (e) => { e.preventDefault(); postComment('left'); });
         rightCommentForm.addEventListener('submit', (e) => { e.preventDefault(); postComment('right'); });
 
-        // --- Initial Load ---
-        async function initialize() {
+        // --- App State Loader ---
+        async function loadAppState(token) {
             try {
-                // Load preferences if user is authenticated
-                const token = localStorage.getItem('idToken');
                 let savedPrefs = { last_opened_pdf: null, pdf_positions: {} };
                 if (token) {
                     try {
@@ -530,23 +528,24 @@
                     option.textContent = pdfName;
                     pdfSelect.appendChild(option);
                 });
-                
+
                 const lastOpenedPdf = savedPrefs.last_opened_pdf || (pdfFiles[0] || null);
-                
+
                 if (lastOpenedPdf) {
-                    // Use the per-book position if available, otherwise default to 1
                     loadPdf(lastOpenedPdf);
                 } else {
-                    document.body.innerHTML = "<h1>No PDFs found.</h1>";
+                    if (pdfFiles.length === 0) {
+                        document.body.innerHTML = "<h1>No PDFs found.</h1>";
+                    } else {
+                        // default to first PDF without changing saved prefs
+                        loadPdf(pdfFiles[0]);
+                    }
                 }
-
             } catch (error) {
-                console.error("Failed to initialize application:", error);
+                console.error("Failed to load app state:", error);
                 document.body.innerHTML = "<h1>Failed to initialize application. Check server logs.</h1>";
             }
         }
-
-        initialize();
     </script>
 </body>
 </html>
