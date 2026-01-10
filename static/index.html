@@ -174,25 +174,6 @@
 <body>
     <div class="main-container">
         <div class="top-row">
-            
-        </div>
-
-        <div class="content-row">
-        <!-- Left Comments Section -->
-        <div id="left-comments" class="comments-section">
-            <h3 id="left-comments-title">تعليقات الصفحة اليسرى</h3>
-            <ul class="comment-list" id="left-comment-list"></ul>
-            <form class="comment-form" id="left-comment-form">
-                <label for="left-line-number">رقم السطر:</label>
-                <input type="number" id="left-line-number" placeholder="ادخل رقم السطر">
-                <label for="left-comment-text">التعليق:</label>
-                <textarea id="left-comment-text" placeholder="أضف تعليقك..." rows="4"></textarea>
-                <button type="submit">إضافة تعليق</button>
-            </form>
-        </div>
-
-        <!-- Center PDF Viewer Section -->
-        <div class="pdf-viewer-main">
             <div class="top-controls">
                 <label for="pdf-select">اختر ملف PDF:</label>
                 <select id="pdf-select">
@@ -216,6 +197,24 @@
                     <button id="btn-logout" style="display:none">تسجيل خروج</button>
                 </div>
             </div>
+        </div>
+
+        <div class="content-row">
+        <!-- Left Comments Section -->
+        <div id="left-comments" class="comments-section">
+            <h3 id="left-comments-title">تعليقات الصفحة اليسرى</h3>
+            <ul class="comment-list" id="left-comment-list"></ul>
+            <form class="comment-form" id="left-comment-form">
+                <label for="left-line-number">رقم السطر:</label>
+                <input type="number" id="left-line-number" placeholder="ادخل رقم السطر">
+                <label for="left-comment-text">التعليق:</label>
+                <textarea id="left-comment-text" placeholder="أضف تعليقك..." rows="4"></textarea>
+                <button type="submit">إضافة تعليق</button>
+            </form>
+        </div>
+
+        <!-- Center PDF Viewer Section -->
+        <div class="pdf-viewer-main">
             <div class="pdf-display-area">
                 <div class="pdf-page-container">
                     <img id="left-pdf-image" alt="PDF page will be loaded here"/>
